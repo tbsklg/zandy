@@ -27,6 +27,7 @@
 (deny file-read* (regex #"/Users/[^/]+/\.config/gcloud(/.*)?$"))
 (deny file-read* (regex #"/Users/[^/]+/\.npmrc$"))
 (deny file-read* (regex #"/Users/[^/]+/\.env(\.[^/]+)?$"))
+(deny file-read* (regex #"/Users/[^/]+/\.envrc$"))
 
 ; Shell history
 (deny file-read* (regex #"/Users/[^/]+/\.(bash|zsh|fish|python|node_repl|psql|mysql|irb|lesshst)_?history$"))

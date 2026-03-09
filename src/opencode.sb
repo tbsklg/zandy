@@ -28,6 +28,8 @@
 (deny file-read* (regex #"/Users/[^/]+/\.npmrc$"))
 (deny file-read* (regex #"/Users/[^/]+/\.env(\.[^/]+)?$"))
 (deny file-read* (regex #"/Users/[^/]+/\.envrc$"))
+(deny file-read* (literal (string-append (param "CWD") "/.envrc")))
+(deny file-read* (literal (string-append (param "CWD") "/.env")))
 
 ; Shell history
 (deny file-read* (regex #"/Users/[^/]+/\.(bash|zsh|fish|python|node_repl|psql|mysql|irb|lesshst)_?history$"))

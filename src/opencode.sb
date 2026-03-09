@@ -1,0 +1,64 @@
+(version 1)
+(deny default)
+
+(allow process*)
+(allow sysctl*)
+(allow file-ioctl)
+(allow file-read-metadata)
+(allow file-map-executable)
+
+; Network
+(allow network-outbound)
+(allow network-bind)
+
+; ============================================
+; READ - allow broad, deny sensitive
+; ============================================
+(allow file-read*)
+
+; Secrets & credentials
+(deny file-read* (regex #"/Users/[^/]+/\.ssh/.*"))
+(deny file-read* (regex #"/Users/[^/]+/\.gnupg/.*"))
+(deny file-read* (regex #"/Users/[^/]+/\.aws/.*"))
+(deny file-read* (regex #"/Users/[^/]+/\.docker/config\.json"))
+(deny file-read* (regex #"/Users/[^/]+/\.env"))
+(deny file-read* (regex #"/Users/[^/]+/\.npmrc"))
+
+; Shell history
+(deny file-read* (regex #"/Users/[^/]+/\.bash_history"))
+(deny file-read* (regex #"/Users/[^/]+/\.zsh_history"))
+(deny file-read* (regex #"/Users/[^/]+/\.python_history"))
+(deny file-read* (regex #"/Users/[^/]+/\.node_repl_history"))
+
+; Keychain
+(deny file-read* (regex #"/Users/[^/]+/Library/Keychains/.*"))
+
+; Browser data
+(deny file-read* (regex #"/Users/[^/]+/Library/Application Support/Google/Chrome/.*"))
+(deny file-read* (regex #"/Users/[^/]+/Library/Application Support/Firefox/.*"))
+(deny file-read* (regex #"/Users/[^/]+/Library/Safari/.*"))
+(deny file-read* (regex #"/Users/[^/]+/Library/Cookies/.*"))
+
+; Personal folders
+(deny file-read* (regex #"/Users/[^/]+/Desktop/.*"))
+(deny file-read* (regex #"/Users/[^/]+/Documents/.*"))
+(deny file-read* (regex #"/Users/[^/]+/Downloads/.*"))
+(deny file-read* (regex #"/Users/[^/]+/Pictures/.*"))
+(deny file-read* (regex #"/Users/[^/]+/Movies/.*"))
+(deny file-read* (regex #"/Users/[^/]+/Music/.*"))
+
+; Mail & Messages
+(deny file-read* (regex #"/Users/[^/]+/Library/Messages/.*"))
+(deny file-read* (regex #"/Users/[^/]+/Library/Mail/.*"))
+
+; ============================================
+; WRITE - restricted
+; ============================================
+(allow file-write* (subpath (param "CWD")))
+(allow file-write* (regex #"/Users/[^/]+/\.config/opencode/.*"))
+(allow file-write* (regex #"/Users/[^/]+/\.opencode/.*"))
+(allow file-write* (regex #"/Users/[^/]+/Library/.*"))
+(allow file-write* (regex #"/Users/[^/]+/\.local/.*"))
+(allow file-write* (regex #"/Users/[^/]+/\.cache/.*"))
+(allow file-write* (subpath "/private/tmp"))
+(allow file-write* (subpath "/private/var/folders"))

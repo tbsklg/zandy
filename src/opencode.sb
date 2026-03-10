@@ -9,6 +9,13 @@
 
 ; Network
 (allow network-outbound)
+(allow system-socket (socket-domain 32))
+
+; Mach services required by Bun runtime and opencode
+(allow mach-lookup (global-name "com.apple.SecurityServer"))
+(allow mach-lookup (global-name "com.apple.securityd.xpc"))
+(allow mach-lookup (global-name "com.apple.bsd.dirhelper"))
+(allow mach-lookup (global-name "com.apple.logd"))
 
 ; ============================================
 ; READ - allow broad, deny sensitive (last-match-wins)
@@ -60,12 +67,16 @@
 ; ============================================
 ; WRITE - restricted
 ; ============================================
+(allow file-write-data (literal "/dev/null"))
+(allow file-write-data (literal "/dev/dtracehelper"))
 (allow file-write* (subpath (param "CWD")))
 (allow file-write* (regex #"/Users/[^/]+/\.config/opencode/.*"))
 (allow file-write* (regex #"/Users/[^/]+/\.opencode/.*"))
 (allow file-write* (regex #"/Users/[^/]+/Library/Application Support/opencode/.*"))
 (allow file-write* (regex #"/Users/[^/]+/Library/Logs/opencode/.*"))
-(allow file-write* (regex #"/Users/[^/]+/\.local/.*"))
-(allow file-write* (regex #"/Users/[^/]+/\.cache/.*"))
+(allow file-write* (regex #"/Users/[^/]+/\.local/share/.*"))
+(allow file-write* (regex #"/Users/[^/]+/\.local/state/.*"))
+(allow file-write* (regex #"/Users/[^/]+/\.cache/opencode/.*"))
+(allow file-write* (regex #"/Users/[^/]+/\.cache/bun/.*"))
 (allow file-write* (subpath "/private/tmp"))
 (allow file-write* (subpath "/private/var/folders"))

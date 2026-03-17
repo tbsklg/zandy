@@ -45,8 +45,35 @@ Place a `.zandy.json` in the working directory (or `~/.config/zandy/config.json`
 }
 ```
 
+## Script only
+
+If you don't want to build the Zig binary, you can use `opencode.sh` directly. It applies the same sandbox policy without any configuration file support:
+
+```sh
+chmod +x opencode.sh
+./opencode.sh
+```
+
+Or copy it somewhere on your `PATH`:
+
+```sh
+cp opencode.sh /usr/local/bin/zandy
+```
+
+Note: `opencode.sh` does not read `.zandy.json` or `~/.config/zandy/config.json`. For custom read/write allowlists, use the compiled binary.
+
 ## Test
+
+Run the unit tests:
 
 ```sh
 zig build test
 ```
+
+Run the sandbox integration tests by passing `test-sandbox.md` as a file attachment:
+
+```sh
+./opencode.sh run "Run the tests and provide a summary." --file test-sandbox.md
+```
+
+The agent will execute each command in the table and report whether the results match the expected output.

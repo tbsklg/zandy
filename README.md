@@ -12,11 +12,21 @@ Uses macOS `sandbox-exec` with a least-privilege policy:
 
 ## Requirements
 
-- macOS
-- [Zig](https://ziglang.org/) >= 0.15.2
+- macOS (aarch64)
 - `opencode` available in `PATH`
 
 ## Install
+
+### Homebrew (recommended)
+
+```sh
+brew tap tbsklg/zandy https://codeberg.org/tbsklg/homebrew-zandy
+brew install zandy
+```
+
+### Build from source
+
+Requires [Zig](https://ziglang.org/) >= 0.15.2:
 
 ```sh
 zig build

@@ -20,7 +20,7 @@ Uses macOS `sandbox-exec` with a least-privilege policy:
 ### Homebrew (recommended)
 
 ```sh
-brew tap tbsklg/zandy https://codeberg.org/tbsklg/homebrew-zandy
+brew tap tbsklg/tap https://codeberg.org/tbsklg/homebrew-tap
 brew install zandy
 ```
 

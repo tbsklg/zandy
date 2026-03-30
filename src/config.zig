@@ -2,6 +2,11 @@ const std = @import("std");
 
 const config_path = ".config/zandy/config.json";
 
+pub const Profile = enum {
+    default,
+    network_only,
+};
+
 pub const FileSystemConfig = struct {
     allowRead: []const []const u8,
     denyRead: []const []const u8,
@@ -11,9 +16,9 @@ pub const FileSystemConfig = struct {
 
 pub const Config = struct {
     filesystem: ?FileSystemConfig,
-    parsed: std.json.Parsed(std.json.Value),
+    parsed: ?std.json.Parsed(std.json.Value),
 
-    pub fn load(allocator: std.mem.Allocator, cwd: []const u8) !?Config {
+    pub fn default(allocator: std.mem.Allocator, cwd: []const u8) !?Config {
         const local_path = try std.fs.path.join(allocator, &.{ cwd, ".zandy.json" });
         defer allocator.free(local_path);
 
@@ -70,7 +75,7 @@ pub const Config = struct {
     }
 
     pub fn deinit(self: *Config) void {
-        self.parsed.deinit();
+        if (self.parsed) |*p| p.deinit();
     }
 };
 

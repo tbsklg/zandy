@@ -22,6 +22,10 @@ exec /usr/bin/sandbox-exec -D "CWD=$PWD" -p '
 (allow mach-lookup (global-name "com.apple.securityd.xpc"))
 (allow mach-lookup (global-name "com.apple.bsd.dirhelper"))
 (allow mach-lookup (global-name "com.apple.logd"))
+(allow mach-lookup (global-name "com.apple.system.notification_center"))
+(allow mach-lookup (global-name "com.apple.system.opendirectoryd.libinfo"))
+(allow mach-lookup (global-name "com.apple.system.opendirectoryd.membership"))
+(allow mach-lookup (global-name "com.apple.PowerManagement.control"))
 
 ; ============================================
 ; READ - allow broad, deny sensitive (last-match-wins)

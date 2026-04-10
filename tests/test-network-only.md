@@ -1,53 +1,64 @@
 # Network-Only Sandbox Tests
 
-Run zandy with `--network-only`, then run each command inside the opencode session and verify the expected result.
+## Network
 
-## Network (should work)
-
-| Command | Expected |
+| Scenario | Expected |
 |---|---|
-| `curl -s -o /dev/null -w "%{http_code}" https://api.anthropic.com` | `307` or any HTTP response (not a connection error) |
-| `curl -s -o /dev/null -w "%{http_code}" https://openai.com` | `200` or any HTTP response |
+| Open a TCP connection to a public host on port 80 | Connection succeeds |
+| Open a TCP connection to a public host on port 443 | Connection succeeds |
+| Resolve a public DNS name | Returns an IP address |
 
 ## Write restrictions (CWD is read-only)
 
-| Command | Expected |
+| Scenario | Expected |
 |---|---|
-| `touch /Users/tbsklg/tmp/evil` | Operation not permitted |
-| `echo test > /Users/tbsklg/tmp/test.txt` | Operation not permitted |
-| `mkdir /Users/tbsklg/tmp/newdir` | Operation not permitted |
+| Create a file in CWD | Operation not permitted |
+| Write to a file in CWD | Operation not permitted |
+| Create a directory in CWD | Operation not permitted |
 
-## Write allowed (target dir)
+## Write restrictions (general filesystem)
 
-| Command | Expected |
+| Scenario | Expected |
 |---|---|
-| `echo test > /tmp/zandy/test.txt && rm /tmp/zandy/test.txt` | no error |
-| `mkdir /tmp/zandy/newdir && rmdir /tmp/zandy/newdir` | no error |
+| Create a file in `/tmp` | Operation not permitted |
+| Create a file in `$HOME` | Operation not permitted |
+| Write to `/dev/null` | Success (explicitly allowed) |
 
 ## Read restrictions (credentials and personal data)
 
-| Command | Expected |
+| Scenario | Expected |
 |---|---|
-| `cat ~/.ssh/id_rsa` | Operation not permitted |
-| `cat ~/.aws/credentials` | Operation not permitted |
-| `cat ~/.netrc` | Operation not permitted |
-| `cat ~/.git-credentials` | Operation not permitted |
-| `cat ~/.kube/config` | Operation not permitted |
-| `cat ~/.npmrc` | Operation not permitted |
-| `cat ~/.zsh_history` | Operation not permitted |
-| `ls ~/Desktop` | Operation not permitted |
-| `ls ~/Documents` | Operation not permitted |
-| `ls ~/Downloads` | Operation not permitted |
-| `ls ~/Library/Keychains` | Operation not permitted |
-| `ls ~/Library/Safari` | Operation not permitted |
-| `ls ~/Library/Mail` | Operation not permitted |
-| `ls ~/Library/Messages` | Operation not permitted |
+| Read `~/.ssh/id_rsa` | Operation not permitted |
+| Read `~/.aws/credentials` | Operation not permitted |
+| Read `~/.netrc` | Operation not permitted |
+| Read `~/.git-credentials` | Operation not permitted |
+| Read `~/.kube/config` | Operation not permitted |
+| Read `~/.npmrc` | Operation not permitted |
+| Read `~/.zsh_history` | Operation not permitted |
+| List `~/Desktop` | Operation not permitted |
+| List `~/Documents` | Operation not permitted |
+| List `~/Downloads` | Operation not permitted |
+| List `~/Library/Keychains` | Operation not permitted |
+| List `~/Library/Safari` | Operation not permitted |
+| List `~/Library/Mail` | Operation not permitted |
+| List `~/Library/Messages` | Operation not permitted |
 
 ## Read allowed
 
-| Command | Expected |
+| Scenario | Expected |
 |---|---|
-| `ls /Users/tbsklg/tmp` | directory listing |
-| `cat /Users/tbsklg/dotfiles/config/opencode/opencode.json` | file contents |
-| `ls /opt/homebrew` | directory listing |
-| `ls /tmp/zandy` | directory listing |
+| List CWD | Directory listing |
+| List `/opt/homebrew` | Directory listing |
+| List `/tmp/zandy` | Directory listing |
+| List `/usr/share/icu` | Directory listing |
+| List `/` | Directory listing |
+| List `~/.config/opencode` | Directory listing |
+| List `~/.local/share/opencode` | Directory listing |
+| List `~/.cache/opencode` | Directory listing |
+
+## Process execution
+
+| Scenario | Expected |
+|---|---|
+| Run a shell built-in | Produces expected output |
+| Spawn a child process | Process executes successfully |

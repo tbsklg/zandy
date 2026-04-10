@@ -14,7 +14,6 @@ pub fn main() !void {
 
     const profile = blk: {
         var args = std.process.args();
-        _ = args.next();
         while (args.next()) |arg| {
             if (std.mem.eql(u8, arg, "--network-only")) break :blk Profile.network_only;
         }

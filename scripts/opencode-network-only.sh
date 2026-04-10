@@ -31,28 +31,26 @@ exec /usr/bin/sandbox-exec -D "HOME=$HOME" -D "CWD=$PWD" -p '
 (allow mach-lookup (global-name "com.apple.PowerManagement.control"))
 (allow mach-lookup (global-name "ipc-posix-shm-read-data apple.shm.notification_center"))
 
-(allow file-read-data (subpath "/nix/store"))
-(allow file* (literal "/dev/null"))
-
-; Opencode
+; Opencode Config
 (allow file* (subpath (string-append (param "HOME") "/.local/share/opencode")))
 (allow file* (subpath (string-append (param "HOME") "/.local/state/opencode")))
 (allow file* (subpath (string-append (param "HOME") "/.cache/opencode")))
-(allow file-read-data (subpath (string-append (param "HOME") "/.npm-global")))
-
-; Dotfiles (symlink targets for opencode config)
-(allow file-read-data (subpath (string-append (param "HOME") "/dotfiles/config/opencode")))
+(allow file* (subpath (string-append (param "HOME") "/.config/opencode")))
+(allow file* (subpath (string-append (param "HOME") "/dotfiles/config/opencode")))
 
 ; CWD
-(allow file-read-data (subpath (param "CWD")))
+(allow file-read* (subpath (param "CWD")))
 
 (allow file-read-data (subpath "/opt/homebrew"))
 
 (allow file-read-data (subpath "/private/var"))
-(allow file-read-data (literal "/usr/share/icu/icudt76l.dat"))
+(allow file-read-data (subpath "/usr/share/icu"))
 
+(allow file* (literal "/dev/null"))
 (allow file-read-data (literal "/"))
 (allow file-read-data (subpath "/private/tmp"))
 (allow file-write-data (subpath "/private/var"))
 (allow file-write-create (subpath "/private/var"))
+
+(deny file* (subpath "/private/tmp/com.apple.launchd"))
 ' opencode "$TARGET_DIR" "$@"

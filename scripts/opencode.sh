@@ -28,7 +28,7 @@ exec /usr/bin/sandbox-exec -D "CWD=$PWD" -D "HOME=$HOME" -p '
 (allow mach-lookup (global-name "com.apple.PowerManagement.control"))
 (allow mach-lookup (global-name "ipc-posix-shm-read-data apple.shm.notification_center"))
 
-; Opencode Config
+; Opencode config
 (allow file* (subpath (string-append (param "HOME") "/.local/share/opencode")))
 (allow file* (subpath (string-append (param "HOME") "/.local/state/opencode")))
 (allow file* (subpath (string-append (param "HOME") "/.cache/opencode")))

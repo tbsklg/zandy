@@ -14,7 +14,12 @@ exec /usr/bin/sandbox-exec -D "CWD=$PWD" -D "HOME=$HOME" -p '
 (allow mach-priv-task-port (target same-sandbox))
 
 ; Network
+(allow network-bind
+  (local tcp)
+  (local udp)
+)
 (allow network-outbound)
+(allow network-inbound)
 (allow system-socket (socket-domain 32))
 
 ; Mach services
@@ -42,6 +47,7 @@ exec /usr/bin/sandbox-exec -D "CWD=$PWD" -D "HOME=$HOME" -p '
 (allow file-read* (subpath (string-append (param "HOME") "/.aws/sso/cache")))
 
 (allow file-read-data (subpath "/opt/homebrew"))
+(allow file-write* (literal (string-append (param "HOME") "/Library/Caches/claude-cli-nodejs")))
 
 (allow file-read-data (subpath "/usr/share/icu"))
 

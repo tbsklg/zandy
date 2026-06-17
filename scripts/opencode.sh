@@ -38,7 +38,7 @@ exec /usr/bin/sandbox-exec -D "CWD=$PWD" -D "HOME=$HOME" -p '
 (allow file-read-data (subpath "/opt/homebrew"))
 
 ; CWD
-(allow file-read* (subpath (param "CWD")))
+(allow file* (subpath (param "CWD")))
 
 (allow file-read-data (subpath "/private/var"))
 (allow file-read-data (subpath "/usr/share/icu"))
@@ -48,7 +48,6 @@ exec /usr/bin/sandbox-exec -D "CWD=$PWD" -D "HOME=$HOME" -p '
 (allow file-read-data (subpath "/private/tmp"))
 (allow file-write-data (subpath "/private/var"))
 (allow file-write-create (subpath "/private/var"))
-(allow file* (subpath (param "CWD")))
 
 (deny file* (subpath "/private/tmp/com.apple.launchd"))
 ' opencode "$@"

@@ -1,17 +1,21 @@
 # zandy
 
-A macOS security sandbox wrapper for [opencode](https://opencode.ai/). Launches `opencode` inside a restricted `sandbox-exec` environment to limit filesystem access and reduce the risk of sensitive data exposure.
+A macOS security sandbox wrapper for [opencode](https://opencode.ai/). Launches `opencode` inside a restricted seatbelt sandbox to limit filesystem access and reduce the risk of sensitive data exposure.
+
+zandy builds a [Seatbelt (SBPL) profile](https://github.com/apple-oss-distributions/Sandbox) in memory, applies it to the current process via the `sandbox_init_with_parameters` libsandbox call, then `execve`s `opencode`. Everything is denied by default; only the paths and services opencode needs are granted, so locations like `~/.ssh`, `~/.aws`, Keychain and browser data are never reachable.
 
 ## Profiles
 
-| Profile | File access | Network |
-|---------|-------------|---------|
-| `default` | Broad read, restricted write; sensitive paths denied (`~/.ssh`, `~/.aws`, `~/.docker`, Keychain, browser data, shell history, etc.) | Allowed |
-| `network_only` | Read-only; restricted to opencode config/cache dirs and CWD | Allowed |
+| Profile | Working directory | Other filesystem | Network |
+|---------|-------------------|------------------|---------|
+| `default` | Full read/write (`file*`) | opencode config/state/cache dirs read/write; system paths needed to run; everything else denied | Allowed |
+| `network_only` | Read-only (`file-read*`) | same as `default` | Allowed |
+
+Both profiles share the same base ruleset; they differ only in the level of access granted to the working directory.
 
 ## Requirements
 
-- macOS (aarch64)
+- macOS
 - `opencode` available in `PATH`
 
 ## Install
@@ -31,16 +35,19 @@ Requires [Zig](https://ziglang.org/) >= 0.15.2:
 zig build
 ```
 
+The binary is written to `zig-out/bin/zandy`.
+
 ## Usage
 
 ```sh
 zandy                        # default profile
 zandy --profile network_only # network-only profile
+zandy --profile=network_only # equivalent
 ```
 
 ## Configuration
 
-Place a `.zandy.json` in the working directory (or `~/.config/zandy/config.json` for a global config):
+Place a `.zandy.json` in the working directory, or `~/.config/zandy/config.json` for a global config (the local file takes precedence). Paths may be absolute, `~`-relative, or relative to the working directory:
 
 ```json
 {
@@ -53,14 +60,22 @@ Place a `.zandy.json` in the working directory (or `~/.config/zandy/config.json`
 }
 ```
 
+These rules are appended to the active profile.
+
 ## Scripts
 
-Standalone shell scripts in `scripts/` — no Zig binary required, no config file support:
+Standalone POSIX shell scripts in `scripts/` that wrap a tool with `sandbox-exec` directly — no Zig binary required, no config file support:
 
-| Script | Profile |
-|--------|---------|
-| `scripts/opencode.sh` | `default` |
-| `scripts/opencode-network-only.sh` | `network_only` |
+| Script | Wraps | Working directory access |
+|--------|-------|--------------------------|
+| `scripts/opencode.sh` | `opencode` | Full read/write |
+| `scripts/opencode-network-only.sh` | `opencode` | Read-only |
+| `scripts/claude.sh` | `claude` | Full read/write |
+
+## Architecture
+
+- [`docs/architecture.puml`](docs/architecture.puml) — high-level component overview
+- [`docs/runtime-flow.puml`](docs/runtime-flow.puml) — runtime sequence (fork → sandbox → exec)
 
 ## Test
 

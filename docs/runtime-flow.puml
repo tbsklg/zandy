@@ -1,0 +1,35 @@
+@startuml runtime-flow
+title zandy — runtime flow
+
+skinparam shadowing false
+
+participant "main" as Main
+participant "config" as Config
+participant "opencode" as Opencode
+participant "sbpl" as Sbpl
+participant "macos / libsandbox" as Sandbox
+participant "opencode binary" as Bin
+
+Main -> Main : parse --profile
+Main -> Config : Config.default(cwd)
+Config --> Main : ?Config
+
+Main -> Main : fork()
+
+group child process
+  Main -> Opencode : opencodeProfile(arena, Env)
+  Opencode -> Sbpl : assemble Rules
+  Sbpl --> Opencode : Profile
+  Opencode --> Main : Profile
+  Main -> Sbpl : Profile.write
+  Sbpl --> Main : SBPL text
+  Main -> Sandbox : sandbox_init_with_parameters(sbpl, CWD, HOME)
+  Sandbox --> Main : rc == 0
+  Main -> Bin : execve("opencode")
+end
+
+group parent process
+  Main -> Main : waitpid(child)
+end
+
+@enduml

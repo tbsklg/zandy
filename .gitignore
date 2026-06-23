@@ -6,3 +6,4 @@ release.sh
 .DS_Store
 .zandy.json
 .envrc
+*-e

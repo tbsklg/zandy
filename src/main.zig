@@ -3,21 +3,20 @@ const macos = @import("macos.zig");
 const opencode = @import("opencode.zig");
 const Config = @import("config.zig");
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+pub fn main(init: std.process.Init) !void {
+    const gpa = init.gpa;
+    const io = init.io;
+    const envMap = init.environ_map;
 
-    const cwd = try std.process.getCwdAlloc(allocator);
-    defer allocator.free(cwd);
+    const cwd = try std.process.currentPathAlloc(init.io, gpa);
+    defer gpa.free(cwd);
 
-    const home = std.posix.getenv("HOME") orelse return error.NoHome;
+    const home = envMap.get("HOME") orelse return error.NoHome;
 
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
-    const arg_views = try allocator.alloc([]const u8, args.len);
-    defer allocator.free(arg_views);
+    const arg_views = try gpa.alloc([]const u8, args.len);
+    defer gpa.free(arg_views);
     for (args, arg_views) |a, *v| v.* = a;
 
     const profile = profileFromArgs(arg_views) catch {
@@ -25,38 +24,46 @@ pub fn main() !void {
         std.process.exit(1);
     };
 
-    var cfg = try Config.default(allocator, cwd);
+    var cfg = try Config.default(gpa, io, envMap, cwd);
     defer if (cfg) |*c| c.deinit();
 
-    const pid = try std.posix.fork();
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+
+    const profile_value = try opencode.opencodeProfile(arena_state.allocator(), .{ .profile = profile, .home = home, .cwd = cwd, .config = cfg });
+
+    var aw = std.Io.Writer.Allocating.init(gpa);
+    defer aw.deinit();
+
+    try profile_value.write(&aw.writer);
+
+    const profile_z = try gpa.dupeZ(u8, aw.written());
+    defer gpa.free(profile_z);
+
+    const cwd_z = try gpa.dupeZ(u8, cwd);
+    defer gpa.free(cwd_z);
+
+    const home_z = try gpa.dupeZ(u8, home);
+    defer gpa.free(home_z);
+
+    const parameters = [_:null]?[*:0]const u8{
+        "CWD",
+        cwd_z.ptr,
+        "HOME",
+        home_z.ptr,
+    };
+
+    const path = try findOpencode(gpa, io);
+    defer gpa.free(path);
+
+    const argv = [_:null]?[*:0]const u8{"opencode"};
+    const env = [_:null]?[*:0]u8{};
+
+    const pid = std.c.fork();
+    if (pid == -1) return error.ForkFailed;
 
     if (pid == 0) {
         var errbuf: ?[*:0]u8 = null;
-
-        var arena_state = std.heap.ArenaAllocator.init(allocator);
-        defer arena_state.deinit();
-
-        const profile_value = try opencode.opencodeProfile(arena_state.allocator(), .{ .profile = profile, .home = home, .cwd = cwd, .config = cfg });
-
-        var profile_buf: std.ArrayList(u8) = .empty;
-        defer profile_buf.deinit(allocator);
-        try profile_value.write(profile_buf.writer(allocator));
-
-        const profile_z = try allocator.dupeZ(u8, profile_buf.items);
-        defer allocator.free(profile_z);
-
-        const cwd_z = try allocator.dupeZ(u8, cwd);
-        defer allocator.free(cwd_z);
-
-        const home_z = try allocator.dupeZ(u8, home);
-        defer allocator.free(home_z);
-
-        const parameters = [_:null]?[*:0]const u8{
-            "CWD",
-            cwd_z.ptr,
-            "HOME",
-            home_z.ptr,
-        };
 
         const rc = macos.sandbox_init_with_parameters(profile_z.ptr, 0, &parameters, &errbuf);
         defer if (errbuf) |buf| macos.sandbox_free_error(buf);
@@ -68,29 +75,20 @@ pub fn main() !void {
             return error.SandboxInitFailed;
         }
 
-        const path = try findOpencode(allocator);
-        defer allocator.free(path);
-
-        const argv = [_:null]?[*:0]const u8{"opencode"};
-        const env = [_:null]?[*:0]u8{};
-        std.posix.execveZ(path.ptr, argv[0..argv.len], env[0..env.len]) catch return error.OpencodeRunFailed;
-    } else {
-        _ = std.posix.waitpid(pid, 0);
-        std.log.debug("Child process terminated", .{});
+        _ = std.c.execve(path.ptr, argv[0..argv.len], env[0..env.len]);
+        return error.OpencodeFailed;
     }
+
+    _ = std.c.waitpid(pid, null, 0);
+    std.log.debug("Child process terminated", .{});
 }
 
-fn findOpencode(allocator: std.mem.Allocator) ![:0]u8 {
-    var child = std.process.Child.init(&.{ "/usr/bin/which", "opencode" }, allocator);
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Ignore;
-    try child.spawn();
+fn findOpencode(allocator: std.mem.Allocator, io: std.Io) ![:0]u8 {
+    const result = try std.process.run(allocator, io, .{ .argv = &.{ "/usr/bin/which", "opencode" } });
+    defer allocator.free(result.stdout);
+    defer allocator.free(result.stderr);
 
-    const stdout = try child.stdout.?.readToEndAlloc(allocator, 4096);
-    errdefer allocator.free(stdout);
-    _ = try child.wait();
-
-    const path = std.mem.trimRight(u8, stdout, "\n\r ");
+    const path = std.mem.trimEnd(u8, result.stdout, "\n\r ");
     if (path.len == 0) return error.OpencodeNotFound;
 
     return allocator.dupeZ(u8, path);

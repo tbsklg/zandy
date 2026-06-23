@@ -65,6 +65,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
 
     const test_sources = [_][]const u8{
+        "src/main.zig",
         "src/sbpl.zig",
         "src/opencode.zig",
     };

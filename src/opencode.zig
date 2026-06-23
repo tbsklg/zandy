@@ -119,21 +119,21 @@ test "serialize opencode profile" {
     var arena_state = std.heap.ArenaAllocator.init(allocator);
     defer arena_state.deinit();
 
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(allocator);
+    var aw = std.Io.Writer.Allocating.init(allocator);
+    defer aw.deinit();
 
     const profile = try opencodeProfile(arena_state.allocator(), .{ .profile = .default, .home = "/Users/test", .cwd = "/Users/test/cwd" });
-    try profile.write(buf.writer(allocator));
+    try profile.write(&aw.writer);
 
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow process-exec)") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow ipc-posix-shm-read-data)") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow process-info* (target same-sandbox))") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow mach-lookup (global-name \"com.apple.logd\"))") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow file* (subpath (string-append (param \"HOME\") \"/.config/opencode\")))") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow file-read-data (literal \"/\"))") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow file* (subpath (param \"CWD\")))") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow file-write-create (subpath \"/private/tmp\"))") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow file-read* (literal \"/opt/homebrew/bin/opencode\"))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow process-exec)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow ipc-posix-shm-read-data)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow process-info* (target same-sandbox))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow mach-lookup (global-name \"com.apple.logd\"))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file* (subpath (string-append (param \"HOME\") \"/.config/opencode\")))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file-read-data (literal \"/\"))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file* (subpath (param \"CWD\")))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file-write-create (subpath \"/private/tmp\"))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file-read* (literal \"/opt/homebrew/bin/opencode\"))") != null);
 }
 
 test "network_only profile grants read-only cwd" {
@@ -141,14 +141,14 @@ test "network_only profile grants read-only cwd" {
     var arena_state = std.heap.ArenaAllocator.init(allocator);
     defer arena_state.deinit();
 
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(allocator);
+    var aw = std.Io.Writer.Allocating.init(allocator);
+    defer aw.deinit();
 
     const profile = try opencodeProfile(arena_state.allocator(), .{ .profile = .network_only, .home = "/Users/test", .cwd = "/Users/test/cwd" });
-    try profile.write(buf.writer(allocator));
+    try profile.write(&aw.writer);
 
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow file-read* (subpath (param \"CWD\")))") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow file* (subpath (param \"CWD\")))") == null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file-read* (subpath (param \"CWD\")))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file* (subpath (param \"CWD\")))") == null);
 }
 
 test "serialize opencode profile with filesystem config" {
@@ -156,8 +156,8 @@ test "serialize opencode profile with filesystem config" {
     var arena_state = std.heap.ArenaAllocator.init(allocator);
     defer arena_state.deinit();
 
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(allocator);
+    var aw = std.Io.Writer.Allocating.init(allocator);
+    defer aw.deinit();
 
     const allowRead = [_][]const u8{ "/abs/allow", "rel/allow", "~/tilde/allow" };
     const denyRead = [_][]const u8{"/abs/deny"};
@@ -176,11 +176,11 @@ test "serialize opencode profile with filesystem config" {
     };
 
     const profile = try opencodeProfile(arena_state.allocator(), .{ .profile = .default, .home = "/Users/test", .cwd = "/Users/test/cwd", .config = cfg });
-    try profile.write(buf.writer(allocator));
+    try profile.write(&aw.writer);
 
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow file-read* (subpath \"/abs/allow\"))") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow file-read* (subpath \"/Users/test/cwd/rel/allow\"))") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow file-read* (subpath \"/Users/test/tilde/allow\"))") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(deny file-read* (subpath \"/abs/deny\"))") != null);
-    try std.testing.expect(std.mem.indexOf(u8, buf.items, "(allow file-write* (subpath \"/abs/write\"))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file-read* (subpath \"/abs/allow\"))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file-read* (subpath \"/Users/test/cwd/rel/allow\"))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file-read* (subpath \"/Users/test/tilde/allow\"))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(deny file-read* (subpath \"/abs/deny\"))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file-write* (subpath \"/abs/write\"))") != null);
 }

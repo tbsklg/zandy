@@ -55,9 +55,9 @@ pub const Operation = enum {
 
 test "write operation" {
     const allocator = std.testing.allocator;
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(allocator);
-    const w = buf.writer(allocator);
+    var aw = std.Io.Writer.Allocating.init(allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
 
     try Operation.file_all.write(w);
     try Operation.file_read_data.write(w);
@@ -67,7 +67,7 @@ test "write operation" {
     try Operation.ipc_posix_shm_read_data.write(w);
     try Operation.mach_lookup.write(w);
 
-    try std.testing.expectEqualStrings("file*file-read-datafile-write-datafile-read*file-write-createipc-posix-shm-read-datamach-lookup", buf.items);
+    try std.testing.expectEqualStrings("file*file-read-datafile-write-datafile-read*file-write-createipc-posix-shm-read-datamach-lookup", aw.written());
 }
 
 pub const Expr = union(enum) {
@@ -86,22 +86,22 @@ pub const Expr = union(enum) {
 
 test "write expr" {
     const allocator = std.testing.allocator;
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(allocator);
-    const w = buf.writer(allocator);
+    var aw = std.Io.Writer.Allocating.init(allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
 
     try (Expr{ .literal = "a/b/c" }).write(w);
-    try std.testing.expectEqualStrings("\"a/b/c\"", buf.items);
+    try std.testing.expectEqualStrings("\"a/b/c\"", aw.written());
 
-    buf.clearRetainingCapacity();
+    aw.clearRetainingCapacity();
 
     try (Expr{ .param = "CWD" }).write(w);
-    try std.testing.expectEqualStrings("(param \"CWD\")", buf.items);
+    try std.testing.expectEqualStrings("(param \"CWD\")", aw.written());
 
-    buf.clearRetainingCapacity();
+    aw.clearRetainingCapacity();
 
     try (Expr{ .param_append = .{ .param = "CWD", .suffix = "a/b/c" } }).write(w);
-    try std.testing.expectEqualStrings("(string-append (param \"CWD\") \"a/b/c\")", buf.items);
+    try std.testing.expectEqualStrings("(string-append (param \"CWD\") \"a/b/c\")", aw.written());
 }
 
 pub const Filter = union(enum) {
@@ -138,32 +138,32 @@ pub const Filter = union(enum) {
 
 test "write filter" {
     const allocator = std.testing.allocator;
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(allocator);
-    const w = buf.writer(allocator);
+    var aw = std.Io.Writer.Allocating.init(allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
 
     try (Filter{ .subpath = .{ .param_append = .{ .param = "CWD", .suffix = "/a/b/c" } } }).write(w);
-    try std.testing.expectEqualStrings("(subpath (string-append (param \"CWD\") \"/a/b/c\"))", buf.items);
+    try std.testing.expectEqualStrings("(subpath (string-append (param \"CWD\") \"/a/b/c\"))", aw.written());
 
-    buf.clearRetainingCapacity();
+    aw.clearRetainingCapacity();
 
     try (Filter{ .literal = .{ .literal = "/a/b/c" } }).write(w);
-    try std.testing.expectEqualStrings("(literal \"/a/b/c\")", buf.items);
+    try std.testing.expectEqualStrings("(literal \"/a/b/c\")", aw.written());
 
-    buf.clearRetainingCapacity();
+    aw.clearRetainingCapacity();
 
     try (Filter{ .global_name = "com.apple.SecurityServer" }).write(w);
-    try std.testing.expectEqualStrings("(global-name \"com.apple.SecurityServer\")", buf.items);
+    try std.testing.expectEqualStrings("(global-name \"com.apple.SecurityServer\")", aw.written());
 
-    buf.clearRetainingCapacity();
+    aw.clearRetainingCapacity();
 
     try (Filter{ .target = "same-sandbox" }).write(w);
-    try std.testing.expectEqualStrings("(target same-sandbox)", buf.items);
+    try std.testing.expectEqualStrings("(target same-sandbox)", aw.written());
 
-    buf.clearRetainingCapacity();
+    aw.clearRetainingCapacity();
 
     try (Filter{ .socket_domain = 32 }).write(w);
-    try std.testing.expectEqualStrings("(socket-domain 32)", buf.items);
+    try std.testing.expectEqualStrings("(socket-domain 32)", aw.written());
 }
 
 pub const Rule = struct {
@@ -194,9 +194,9 @@ pub const Rule = struct {
 
 test "write rule" {
     const allocator = std.testing.allocator;
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(allocator);
-    const w = buf.writer(allocator);
+    var aw = std.Io.Writer.Allocating.init(allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
 
     const rule = Rule{
         .action = .allow,
@@ -204,12 +204,12 @@ test "write rule" {
         .filter = .{ .subpath = .{ .param_append = .{ .param = "CWD", .suffix = "/a/b/c" } } },
     };
     try rule.write(w);
-    try std.testing.expectEqualStrings("(allow file-read* (subpath (string-append (param \"CWD\") \"/a/b/c\")))", buf.items);
+    try std.testing.expectEqualStrings("(allow file-read* (subpath (string-append (param \"CWD\") \"/a/b/c\")))", aw.written());
 
-    buf.clearRetainingCapacity();
+    aw.clearRetainingCapacity();
 
     try (Rule{ .action = .allow, .operation = .process_exec }).write(w);
-    try std.testing.expectEqualStrings("(allow process-exec)", buf.items);
+    try std.testing.expectEqualStrings("(allow process-exec)", aw.written());
 }
 
 pub const Profile = struct {
@@ -235,9 +235,9 @@ pub const Profile = struct {
 
 test "write profile" {
     const allocator = std.testing.allocator;
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(allocator);
-    const w = buf.writer(allocator);
+    var aw = std.Io.Writer.Allocating.init(allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
 
     const profile = Profile{
         .rules = &.{
@@ -251,14 +251,14 @@ test "write profile" {
         \\(deny default)
         \\(allow file-read* (subpath (string-append (param "CWD") "/a/b/c")))
     ;
-    try std.testing.expectEqualStrings(expected, buf.items);
+    try std.testing.expectEqualStrings(expected, aw.written());
 }
 
 test "write profile multiple rules" {
     const allocator = std.testing.allocator;
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(allocator);
-    const w = buf.writer(allocator);
+    var aw = std.Io.Writer.Allocating.init(allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
 
     const profile = Profile{
         .rules = &.{
@@ -274,5 +274,5 @@ test "write profile multiple rules" {
         \\(allow process-exec)
         \\(allow process-fork)
     ;
-    try std.testing.expectEqualStrings(expected, buf.items);
+    try std.testing.expectEqualStrings(expected, aw.written());
 }

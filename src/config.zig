@@ -24,35 +24,29 @@ pub const FileSystem = struct {
     denyWrite: []const []const u8,
 };
 
-pub fn default(allocator: std.mem.Allocator, cwd: []const u8) !?Config {
+pub fn default(allocator: std.mem.Allocator, io: std.Io, envMap: *std.process.Environ.Map, cwd: []const u8) !?Config {
     const local_path = try std.fs.path.join(allocator, &.{ cwd, ".zandy.json" });
     defer allocator.free(local_path);
 
-    if (load_from_path(allocator, local_path)) |cfg| return cfg else |_| {}
+    if (load_from_path(allocator, io, local_path)) |cfg| return cfg else |_| {}
 
-    const global_path = try resolve_config_path(allocator);
+    const global_path = try resolve_config_path(allocator, envMap);
     defer allocator.free(global_path);
 
-    if (load_from_path(allocator, global_path)) |cfg| return cfg else |_| {}
+    if (load_from_path(allocator, io, global_path)) |cfg| return cfg else |_| {}
 
     return null;
 }
 
-fn load_from_path(allocator: std.mem.Allocator, path: []const u8) !Config {
-    const file = std.fs.openFileAbsolute(path, .{}) catch |err| switch (err) {
-        error.FileNotFound => return error.FileNotFound,
-        else => return err,
-    };
-    defer file.close();
-
-    const raw = try file.readToEndAlloc(allocator, 1024 * 1024);
+fn load_from_path(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !Config {
+    const raw = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(1024 * 1024));
     defer allocator.free(raw);
 
     return from_json(allocator, raw);
 }
 
-pub fn resolve_config_path(allocator: std.mem.Allocator) ![]u8 {
-    const home = std.posix.getenv("HOME") orelse return error.NoHome;
+pub fn resolve_config_path(allocator: std.mem.Allocator, envMap: *std.process.Environ.Map) ![]u8 {
+    const home = envMap.get("HOME") orelse return error.NoHome;
     return std.fmt.allocPrint(allocator, "{s}/{s}", .{ home, config_path });
 }
 

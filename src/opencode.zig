@@ -3,57 +3,12 @@ const sbpl = @import("sbpl.zig");
 const Config = @import("config.zig");
 
 const Rule = sbpl.Rule;
+const Profile = sbpl.Profile;
 const allow = Rule.allow;
 const deny = Rule.deny;
+const zon = std.zon;
 
-const base_rules = [_]Rule{
-    allow(.process_fork, null),
-    allow(.process_exec, null),
-    allow(.sysctl_all, null),
-    allow(.file_ioctl, null),
-    allow(.file_read_metadata, null),
-    allow(.process_info_all, .{ .target = "same-sandbox" }),
-    allow(.network_outbound, null),
-    allow(.system_socket, .{ .socket_domain = 32 }),
-    allow(.ipc_posix_shm_read_data, null),
-    allow(.ipc_posix_shm_write_create, null),
-
-    allow(.mach_lookup, .{ .global_name = "com.apple.SecurityServer" }),
-    allow(.mach_lookup, .{ .global_name = "com.apple.securityd.xpc" }),
-    allow(.mach_lookup, .{ .global_name = "com.apple.bsd.dirhelper" }),
-    allow(.mach_lookup, .{ .global_name = "com.apple.logd" }),
-    allow(.mach_lookup, .{ .global_name = "com.apple.system.notification_center" }),
-    allow(.mach_lookup, .{ .global_name = "com.apple.system.opendirectoryd.libinfo" }),
-    allow(.mach_lookup, .{ .global_name = "com.apple.system.opendirectoryd.membership" }),
-    allow(.mach_lookup, .{ .global_name = "com.apple.PowerManagement.control" }),
-    allow(.mach_lookup, .{ .global_name = "com.apple.trustd.agent" }),
-
-    allow(.file_all, .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/.local/share/opencode" } } }),
-    allow(.file_all, .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/.local/state/opencode" } } }),
-    allow(.file_all, .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/.cache/opencode" } } }),
-    allow(.file_all, .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/.config/opencode" } } }),
-    allow(.file_all, .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/dotfiles/config/opencode" } } }),
-
-    allow(.file_read_data, .{ .subpath = .{ .literal = "/opt/homebrew" } }),
-    allow(.file_read_all, .{ .literal = .{ .literal = "/opt/homebrew/bin/opencode" } }),
-
-    allow(.file_read_data, .{ .subpath = .{ .literal = "/usr/share/icu" } }),
-    allow(.file_read_data, .{ .literal = .{ .literal = "/" } }),
-    allow(.file_read_data, .{ .subpath = .{ .literal = "/private/etc/ssl" } }),
-
-    allow(.file_write_create, .{ .subpath = .{ .literal = "/private/tmp" } }),
-    allow(.file_read_data, .{ .subpath = .{ .literal = "/private/tmp" } }),
-
-    allow(.file_read_data, .{ .subpath = .{ .literal = "/private/var" } }),
-    allow(.file_write_data, .{ .subpath = .{ .literal = "/private/var" } }),
-    allow(.file_write_create, .{ .subpath = .{ .literal = "/private/var" } }),
-
-    allow(.file_read_data, .{ .subpath = .{ .literal = "/Library/Preferences" } }),
-
-    allow(.file_all, .{ .literal = .{ .literal = "/dev/null" } }),
-    allow(.file_read_data, .{ .literal = .{ .literal = "/dev" } }),
-    allow(.file_read_data, .{ .literal = .{ .literal = "/dev/dtracehelper" } }),
-};
+const builtin_profile: Profile = @import("profiles/opencode.zon");
 
 fn resolvePath(arena: std.mem.Allocator, home: []const u8, cwd: []const u8, path: []const u8) ![]u8 {
     if (std.mem.startsWith(u8, path, "~/")) {
@@ -106,11 +61,13 @@ fn cwdRule(profile: Config.Profile) Rule {
 
 pub fn opencodeProfile(arena: std.mem.Allocator, env: Env) !sbpl.Profile {
     const fs_rules = try buildFilesystemRules(arena, env);
+    const base_rules = builtin_profile.rules;
 
-    const rules = try arena.alloc(Rule, base_rules.len + 1 + fs_rules.len);
-    @memcpy(rules[0..base_rules.len], &base_rules);
-    rules[base_rules.len] = cwdRule(env.profile);
-    @memcpy(rules[base_rules.len + 1 ..], fs_rules);
+    const cwd_rule = cwdRule(env.profile);
+    const cwd_rules = &.{cwd_rule};
+
+    const rules = try std.mem.concat(arena, Rule, &.{ base_rules, cwd_rules, fs_rules });
+
     return .{ .rules = rules };
 }
 

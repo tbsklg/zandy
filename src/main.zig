@@ -3,6 +3,36 @@ const macos = @import("macos.zig");
 const opencode = @import("opencode.zig");
 const Config = @import("config.zig");
 
+const Args = struct {
+    preset: []const u8,
+};
+
+fn parseArgs(args: []const [:0]const u8) !Args {
+    if (args.len < 2) return error.NoPreset;
+    if (args.len > 2) return error.UnexpectedArgs;
+    return .{ .preset = args[1] };
+}
+
+test "returns error when no preset" {
+    const args = [_][:0]const u8{"zandy"};
+
+    try std.testing.expectError(error.NoPreset, parseArgs(&args));
+}
+
+test "returns error when unexpected args" {
+    const args = [_][:0]const u8{ "zandy", "foo", "bar" };
+
+    try std.testing.expectError(error.UnexpectedArgs, parseArgs(&args));
+}
+
+test "returns args with preset" {
+    const args = [_][:0]const u8{ "zandy", "foo" };
+
+    const parsed = try parseArgs(&args);
+
+    try std.testing.expectEqualStrings("foo", parsed.preset);
+}
+
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const io = init.io;
@@ -13,14 +43,9 @@ pub fn main(init: std.process.Init) !void {
 
     const home = envMap.get("HOME") orelse return error.NoHome;
 
-    const args = try init.minimal.args.toSlice(init.arena.allocator());
-
-    const arg_views = try gpa.alloc([]const u8, args.len);
-    defer gpa.free(arg_views);
-    for (args, arg_views) |a, *v| v.* = a;
-
-    const profile = profileFromArgs(arg_views) catch {
-        std.debug.print("invalid --profile (expected default or network_only)\n", .{});
+    const _args = try init.minimal.args.toSlice(init.arena.allocator());
+    _ = parseArgs(_args) catch |err| {
+        std.log.err("{}", .{err});
         std.process.exit(1);
     };
 
@@ -30,7 +55,7 @@ pub fn main(init: std.process.Init) !void {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
 
-    const profile_value = try opencode.opencodeProfile(arena_state.allocator(), .{ .profile = profile, .home = home, .cwd = cwd, .config = cfg });
+    const profile_value = try opencode.opencodeProfile(arena_state.allocator(), .{ .home = home, .cwd = cwd, .config = cfg });
 
     var aw = std.Io.Writer.Allocating.init(gpa);
     defer aw.deinit();
@@ -92,28 +117,4 @@ fn findOpencode(allocator: std.mem.Allocator, io: std.Io) ![:0]u8 {
     if (path.len == 0) return error.OpencodeNotFound;
 
     return allocator.dupeZ(u8, path);
-}
-
-fn profileFromArgs(args: []const []const u8) !Config.Profile {
-    const flag = "--profile";
-    var i: usize = 1;
-    while (i < args.len) : (i += 1) {
-        const arg = args[i];
-        if (std.mem.eql(u8, arg, flag)) {
-            if (i + 1 >= args.len) return error.MissingProfileValue;
-            return Config.Profile.fromString(args[i + 1]) orelse error.UnknownProfile;
-        }
-        if (std.mem.startsWith(u8, arg, flag ++ "=")) {
-            return Config.Profile.fromString(arg[flag.len + 1 ..]) orelse error.UnknownProfile;
-        }
-    }
-    return .default;
-}
-
-test "profileFromArgs" {
-    try std.testing.expectEqual(Config.Profile.default, try profileFromArgs(&.{"zandy"}));
-    try std.testing.expectEqual(Config.Profile.network_only, try profileFromArgs(&.{ "zandy", "--profile", "network_only" }));
-    try std.testing.expectEqual(Config.Profile.network_only, try profileFromArgs(&.{ "zandy", "--profile=network_only" }));
-    try std.testing.expectError(error.UnknownProfile, profileFromArgs(&.{ "zandy", "--profile", "bogus" }));
-    try std.testing.expectError(error.MissingProfileValue, profileFromArgs(&.{ "zandy", "--profile" }));
 }

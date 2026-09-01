@@ -4,32 +4,41 @@ title zandy — runtime flow
 skinparam shadowing false
 
 participant "main" as Main
+participant "cli" as Cli
+participant "preset" as Preset
+participant "env" as Env
 participant "config" as Config
-participant "opencode" as Opencode
-participant "sbpl" as Sbpl
+participant "profile" as Profile
+participant "launch" as Launch
 participant "macos / libsandbox" as Sandbox
-participant "opencode binary" as Bin
+participant "preset binary" as Bin
 
-Main -> Main : parse --profile
-Main -> Config : Config.default(cwd)
+Main -> Cli : parseArgs(argv)
+Cli --> Main : Args
+Main -> Preset : find(args.preset)
+Preset --> Main : *Preset
+
+Main -> Env : Env.init(envMap)
+Env --> Main : Env (home, cwd)
+Main -> Config : Config.load(home, cwd)
 Config --> Main : ?Config
+Main -> Profile : buildProfile(preset.profile, env, config)
+Profile --> Main : sbpl.Profile
 
-Main -> Main : fork()
+Main -> Launch : launch(binary, profile, env)
+Launch -> Launch : serialize(profile) → SBPL text
+Launch -> Launch : findBinary(binary)
+
+Launch -> Launch : fork()
 
 group child process
-  Main -> Opencode : opencodeProfile(arena, Env)
-  Opencode -> Sbpl : assemble Rules
-  Sbpl --> Opencode : Profile
-  Opencode --> Main : Profile
-  Main -> Sbpl : Profile.write
-  Sbpl --> Main : SBPL text
-  Main -> Sandbox : sandbox_init_with_parameters(sbpl, CWD, HOME)
-  Sandbox --> Main : rc == 0
-  Main -> Bin : execve("opencode")
+  Launch -> Sandbox : sandbox_init_with_parameters(sbpl, CWD, HOME)
+  Sandbox --> Launch : rc == 0
+  Launch -> Bin : execve(path, argv, envp=empty)
 end
 
 group parent process
-  Main -> Main : waitpid(child)
+  Launch -> Launch : waitpid(child)
 end
 
 @enduml

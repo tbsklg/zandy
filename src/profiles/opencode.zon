@@ -46,6 +46,8 @@
 
         .{ .action = .allow, .operation = .file_read_data, .filter = .{ .subpath = .{ .literal = "/Library/Preferences" } } },
 
+        .{ .action = .allow, .operation = .file_all, .filter = .{ .subpath = .{ .param = "CWD" } } },
+
         .{ .action = .allow, .operation = .file_all, .filter = .{ .literal = .{ .literal = "/dev/null" } } },
         .{ .action = .allow, .operation = .file_read_data, .filter = .{ .literal = .{ .literal = "/dev" } } },
         .{ .action = .allow, .operation = .file_read_data, .filter = .{ .literal = .{ .literal = "/dev/dtracehelper" } } },

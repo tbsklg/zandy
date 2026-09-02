@@ -13,6 +13,8 @@ pub fn launch(arena: std.mem.Allocator, io: std.Io, binary: [:0]const u8, profil
         env.cwd.ptr,
         "HOME",
         env.home.ptr,
+        "TMPDIR",
+        env.tmpdir.ptr,
     };
 
     const argv = [_:null]?[*:0]const u8{binary.ptr};

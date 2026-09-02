@@ -1,10 +1,11 @@
 #!/bin/sh
 
 TARGET_DIR="/tmp/zandy"
+TMPDIR="${TMPDIR:-/private/tmp}"
 
 mkdir -p "$TARGET_DIR"
 
-exec /usr/bin/sandbox-exec -D "HOME=$HOME" -D "CWD=$PWD" -p '
+exec /usr/bin/sandbox-exec -D "HOME=$HOME" -D "CWD=$PWD" -D "TMPDIR=$TMPDIR" -p '
 (version 1)
 (deny default)
 
@@ -49,8 +50,10 @@ exec /usr/bin/sandbox-exec -D "HOME=$HOME" -D "CWD=$PWD" -p '
 (allow file* (literal "/dev/null"))
 (allow file-read-data (literal "/"))
 (allow file-read-data (subpath "/private/tmp"))
-(allow file-write-data (subpath "/private/var"))
-(allow file-write-create (subpath "/private/var"))
+(allow file-write-data (subpath (param "TMPDIR")))
+(allow file-write-create (subpath (param "TMPDIR")))
 
 (deny file* (subpath "/private/tmp/com.apple.launchd"))
+(deny file* (subpath "/private/var/db"))
+(deny file* (subpath "/private/var/root"))
 ' opencode "$TARGET_DIR" "$@"

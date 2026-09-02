@@ -60,8 +60,9 @@ test "claude preset contains expected rules" {
     try p.profile.write(&aw.writer);
 
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow process-exec)") != null);
-    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow network-bind)") != null);
-    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow network-inbound)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow network-outbound)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow network-bind)") == null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow network-inbound)") == null);
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow signal (target same-sandbox))") != null);
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow mach-lookup (global-name \"com.apple.trustd\"))") != null);
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file* (subpath (string-append (param \"HOME\") \"/.claude\")))") != null);

@@ -44,10 +44,14 @@
         .{ .action = .allow, .operation = .file_read_data, .filter = .{ .subpath = .{ .literal = "/private/tmp" } } },
 
         .{ .action = .allow, .operation = .file_read_data, .filter = .{ .subpath = .{ .literal = "/private/var" } } },
-        .{ .action = .allow, .operation = .file_write_data, .filter = .{ .subpath = .{ .literal = "/private/var" } } },
-        .{ .action = .allow, .operation = .file_write_create, .filter = .{ .subpath = .{ .literal = "/private/var" } } },
+        .{ .action = .allow, .operation = .file_write_data, .filter = .{ .subpath = .{ .param = "TMPDIR" } } },
+        .{ .action = .allow, .operation = .file_write_create, .filter = .{ .subpath = .{ .param = "TMPDIR" } } },
 
         .{ .action = .allow, .operation = .file_read_data, .filter = .{ .subpath = .{ .literal = "/Library/Preferences" } } },
+
+        .{ .action = .deny, .operation = .file_all, .filter = .{ .subpath = .{ .literal = "/private/tmp/com.apple.launchd" } } },
+        .{ .action = .deny, .operation = .file_all, .filter = .{ .subpath = .{ .literal = "/private/var/db" } } },
+        .{ .action = .deny, .operation = .file_all, .filter = .{ .subpath = .{ .literal = "/private/var/root" } } },
 
         .{ .action = .allow, .operation = .file_all, .filter = .{ .subpath = .{ .param = "CWD" } } },
 

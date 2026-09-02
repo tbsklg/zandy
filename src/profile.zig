@@ -62,7 +62,7 @@ test "build filesystem rules from config" {
         },
     };
 
-    const rules = try buildFilesystemRules(arena_state.allocator(), .{ .home = "/Users/test", .cwd = "/Users/test/cwd" }, cfg);
+    const rules = try buildFilesystemRules(arena_state.allocator(), .{ .home = "/Users/test", .cwd = "/Users/test/cwd", .tmpdir = "/private/tmp" }, cfg);
     const profile = sbpl.Profile{ .rules = rules };
     try profile.write(&aw.writer);
 

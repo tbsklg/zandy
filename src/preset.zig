@@ -9,6 +9,7 @@ pub const Preset = struct {
 
 const presets = [_]Preset{
     .{ .name = "opencode", .binary = "opencode", .profile = @import("profiles/opencode.zon") },
+    .{ .name = "claude", .binary = "claude", .profile = @import("profiles/claude.zon") },
 };
 
 pub fn find(name: []const u8) ?*const Preset {
@@ -48,4 +49,23 @@ test "opencode preset contains expected rules" {
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file* (subpath (param \"CWD\")))") != null);
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file-write-create (subpath \"/private/tmp\"))") != null);
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file-read* (literal \"/opt/homebrew/bin/opencode\"))") != null);
+}
+
+test "claude preset contains expected rules" {
+    const p = find("claude").?;
+
+    var aw = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    try p.profile.write(&aw.writer);
+
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow process-exec)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow network-bind)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow network-inbound)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow signal (target same-sandbox))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow mach-lookup (global-name \"com.apple.trustd\"))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file* (subpath (string-append (param \"HOME\") \"/.claude\")))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file* (literal (string-append (param \"HOME\") \"/.claude.json\")))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file* (subpath (param \"CWD\")))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(deny file* (subpath \"/private/tmp/com.apple.launchd\"))") != null);
 }

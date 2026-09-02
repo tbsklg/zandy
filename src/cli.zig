@@ -18,6 +18,7 @@ pub const usage =
     \\
     \\presets:
     \\  opencode    sandbox opencode with its builtin profile
+    \\  claude      sandbox claude with its builtin profile
 ;
 
 test "returns error when no preset" {

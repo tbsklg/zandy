@@ -30,6 +30,9 @@
         .{ .action = .allow, .operation = .file_all, .filter = .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/.config/opencode" } } } },
         .{ .action = .allow, .operation = .file_all, .filter = .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/dotfiles/config/opencode" } } } },
 
+        .{ .action = .deny, .operation = .file_write_all, .filter = .{ .literal = .{ .param_append = .{ .param = "HOME", .suffix = "/.config/opencode/opencode.json" } } } },
+        .{ .action = .deny, .operation = .file_write_all, .filter = .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/.config/opencode/plugin" } } } },
+
         .{ .action = .allow, .operation = .file_read_data, .filter = .{ .subpath = .{ .literal = "/opt/homebrew" } } },
         .{ .action = .allow, .operation = .file_read_all, .filter = .{ .literal = .{ .literal = "/opt/homebrew/bin/opencode" } } },
 

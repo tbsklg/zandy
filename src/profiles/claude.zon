@@ -1,0 +1,63 @@
+.{
+    .version = "1",
+    .deny_default = true,
+
+    .rules = .{
+        .{ .action = .allow, .operation = .process_exec },
+        .{ .action = .allow, .operation = .process_fork },
+        .{ .action = .allow, .operation = .sysctl_all },
+        .{ .action = .allow, .operation = .file_ioctl },
+        .{ .action = .allow, .operation = .file_read_metadata },
+        .{ .action = .allow, .operation = .file_map_executable },
+        .{ .action = .allow, .operation = .process_info_all, .filter = .{ .target = "same-sandbox" } },
+        .{ .action = .allow, .operation = .signal, .filter = .{ .target = "same-sandbox" } },
+        .{ .action = .allow, .operation = .mach_priv_task_port, .filter = .{ .target = "same-sandbox" } },
+
+        .{ .action = .allow, .operation = .network_bind },
+        .{ .action = .allow, .operation = .network_outbound },
+        .{ .action = .allow, .operation = .network_inbound },
+        .{ .action = .allow, .operation = .system_socket, .filter = .{ .socket_domain = 32 } },
+
+        .{ .action = .allow, .operation = .mach_lookup, .filter = .{ .global_name = "com.apple.bsd.dirhelper" } },
+        .{ .action = .allow, .operation = .mach_lookup, .filter = .{ .global_name = "com.apple.logd" } },
+        .{ .action = .allow, .operation = .mach_lookup, .filter = .{ .global_name = "com.apple.PowerManagement.control" } },
+        .{ .action = .allow, .operation = .mach_lookup, .filter = .{ .global_name = "com.apple.system.notification_center" } },
+        .{ .action = .allow, .operation = .mach_lookup, .filter = .{ .global_name = "com.apple.system.opendirectoryd.libinfo" } },
+        .{ .action = .allow, .operation = .mach_lookup, .filter = .{ .global_name = "com.apple.system.opendirectoryd.membership" } },
+        .{ .action = .allow, .operation = .mach_lookup, .filter = .{ .global_name = "com.apple.SecurityServer" } },
+        .{ .action = .allow, .operation = .mach_lookup, .filter = .{ .global_name = "com.apple.securityd.xpc" } },
+        // https://github.com/anthropics/claude-code/issues/34876
+        .{ .action = .allow, .operation = .mach_lookup, .filter = .{ .global_name = "com.apple.trustd" } },
+
+        .{ .action = .allow, .operation = .file_all, .filter = .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/.claude" } } } },
+        .{ .action = .allow, .operation = .file_all, .filter = .{ .literal = .{ .param_append = .{ .param = "HOME", .suffix = "/.claude.json" } } } },
+        .{ .action = .allow, .operation = .file_all, .filter = .{ .literal = .{ .param_append = .{ .param = "HOME", .suffix = "/.claude.json.lock" } } } },
+
+        .{ .action = .deny, .operation = .file_write_all, .filter = .{ .literal = .{ .param_append = .{ .param = "HOME", .suffix = "/.claude/settings.json" } } } },
+        .{ .action = .deny, .operation = .file_write_all, .filter = .{ .literal = .{ .param_append = .{ .param = "HOME", .suffix = "/.claude/settings.local.json" } } } },
+        .{ .action = .deny, .operation = .file_write_all, .filter = .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/.claude/plugins" } } } },
+
+        .{ .action = .allow, .operation = .file_read_all, .filter = .{ .literal = .{ .param_append = .{ .param = "HOME", .suffix = "/.aws/credentials" } } } },
+        .{ .action = .allow, .operation = .file_read_all, .filter = .{ .literal = .{ .param_append = .{ .param = "HOME", .suffix = "/.aws/config" } } } },
+        .{ .action = .allow, .operation = .file_read_all, .filter = .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/.aws/sso/cache" } } } },
+
+        .{ .action = .allow, .operation = .file_read_data, .filter = .{ .subpath = .{ .literal = "/opt/homebrew" } } },
+        .{ .action = .allow, .operation = .file_write_all, .filter = .{ .literal = .{ .param_append = .{ .param = "HOME", .suffix = "/Library/Caches/claude-cli-nodejs" } } } },
+
+        .{ .action = .allow, .operation = .file_read_data, .filter = .{ .subpath = .{ .literal = "/usr/share/icu" } } },
+
+        .{ .action = .allow, .operation = .file_all, .filter = .{ .subpath = .{ .param = "CWD" } } },
+
+        .{ .action = .allow, .operation = .file_all, .filter = .{ .literal = .{ .literal = "/dev/null" } } },
+
+        .{ .action = .allow, .operation = .file_read_data, .filter = .{ .literal = .{ .literal = "/" } } },
+
+        .{ .action = .allow, .operation = .file_read_data, .filter = .{ .subpath = .{ .literal = "/private/var" } } },
+        .{ .action = .allow, .operation = .file_write_all, .filter = .{ .subpath = .{ .literal = "/private/var" } } },
+
+        .{ .action = .allow, .operation = .file_read_data, .filter = .{ .subpath = .{ .literal = "/private/tmp" } } },
+        .{ .action = .allow, .operation = .file_write_all, .filter = .{ .subpath = .{ .literal = "/private/tmp" } } },
+
+        .{ .action = .deny, .operation = .file_all, .filter = .{ .subpath = .{ .literal = "/private/tmp/com.apple.launchd" } } },
+    },
+}

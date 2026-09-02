@@ -16,7 +16,6 @@ pub fn launch(arena: std.mem.Allocator, io: std.Io, binary: [:0]const u8, profil
     };
 
     const argv = [_:null]?[*:0]const u8{binary.ptr};
-    const envp = [_:null]?[*:0]u8{};
 
     const pid = std.c.fork();
     if (pid == -1) return error.ForkFailed;
@@ -37,7 +36,7 @@ pub fn launch(arena: std.mem.Allocator, io: std.Io, binary: [:0]const u8, profil
             return error.SandboxInitFailed;
         }
 
-        _ = std.c.execve(path.ptr, argv[0..argv.len], envp[0..envp.len]);
+        _ = std.c.execve(path.ptr, argv[0..argv.len], @ptrCast(std.c.environ));
         return error.ExecFailed;
     }
 

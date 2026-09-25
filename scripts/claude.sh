@@ -1,5 +1,6 @@
 #!/bin/sh
-exec /usr/bin/sandbox-exec -D "CWD=$PWD" -D "HOME=$HOME" -p '
+TMPDIR="${TMPDIR:-/private/tmp}"
+exec /usr/bin/sandbox-exec -D "CWD=$PWD" -D "HOME=$HOME" -D "TMPDIR=$TMPDIR" -p '
 (version 1)
 (deny default)
 
@@ -14,12 +15,7 @@ exec /usr/bin/sandbox-exec -D "CWD=$PWD" -D "HOME=$HOME" -p '
 (allow mach-priv-task-port (target same-sandbox))
 
 ; Network
-(allow network-bind
-  (local tcp)
-  (local udp)
-)
 (allow network-outbound)
-(allow network-inbound)
 (allow system-socket (socket-domain 32))
 
 ; Mach services
@@ -42,10 +38,6 @@ exec /usr/bin/sandbox-exec -D "CWD=$PWD" -D "HOME=$HOME" -p '
 (allow file* (literal (string-append (param "HOME") "/.claude.json")))
 (allow file* (literal (string-append (param "HOME") "/.claude.json.lock")))
 
-(allow file-read* (literal (string-append (param "HOME") "/.aws/credentials")))
-(allow file-read* (literal (string-append (param "HOME") "/.aws/config")))
-(allow file-read* (subpath (string-append (param "HOME") "/.aws/sso/cache")))
-
 (allow file-read-data (subpath "/opt/homebrew"))
 (allow file-write* (literal (string-append (param "HOME") "/Library/Caches/claude-cli-nodejs")))
 
@@ -59,10 +51,12 @@ exec /usr/bin/sandbox-exec -D "CWD=$PWD" -D "HOME=$HOME" -p '
 (allow file-read-data (literal "/"))
 
 (allow file-read-data (subpath "/private/var"))
-(allow file-write* (subpath "/private/var"))
+(allow file-write* (subpath (param "TMPDIR")))
 
 (allow file-read-data (subpath "/private/tmp"))
 (allow file-write* (subpath "/private/tmp"))
 
 (deny file* (subpath "/private/tmp/com.apple.launchd"))
+(deny file* (subpath "/private/var/db"))
+(deny file* (subpath "/private/var/root"))
 ' claude "$@"

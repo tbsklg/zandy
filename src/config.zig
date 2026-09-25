@@ -4,18 +4,8 @@ const Config = @This();
 
 const config_path = ".config/zandy/config.json";
 
-allocator: std.mem.Allocator,
 filesystem: ?FileSystem,
 parsed: ?std.json.Parsed(std.json.Value),
-
-pub const Profile = enum {
-    default,
-    network_only,
-
-    pub fn fromString(s: []const u8) ?Profile {
-        return std.meta.stringToEnum(Profile, s);
-    }
-};
 
 pub const FileSystem = struct {
     allowRead: []const []const u8,
@@ -24,15 +14,11 @@ pub const FileSystem = struct {
     denyWrite: []const []const u8,
 };
 
-pub fn default(allocator: std.mem.Allocator, io: std.Io, envMap: *std.process.Environ.Map, cwd: []const u8) !?Config {
+pub fn load(allocator: std.mem.Allocator, io: std.Io, home: []const u8, cwd: []const u8) !?Config {
     const local_path = try std.fs.path.join(allocator, &.{ cwd, ".zandy.json" });
-    defer allocator.free(local_path);
-
     if (load_from_path(allocator, io, local_path)) |cfg| return cfg else |_| {}
 
-    const global_path = try resolve_config_path(allocator, envMap);
-    defer allocator.free(global_path);
-
+    const global_path = try std.fs.path.join(allocator, &.{ home, config_path });
     if (load_from_path(allocator, io, global_path)) |cfg| return cfg else |_| {}
 
     return null;
@@ -45,11 +31,6 @@ fn load_from_path(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !C
     return from_json(allocator, raw);
 }
 
-pub fn resolve_config_path(allocator: std.mem.Allocator, envMap: *std.process.Environ.Map) ![]u8 {
-    const home = envMap.get("HOME") orelse return error.NoHome;
-    return std.fmt.allocPrint(allocator, "{s}/{s}", .{ home, config_path });
-}
-
 fn from_json(allocator: std.mem.Allocator, raw: []const u8) !Config {
     const parsed = try std.json.parseFromSlice(
         std.json.Value,
@@ -57,14 +38,12 @@ fn from_json(allocator: std.mem.Allocator, raw: []const u8) !Config {
         raw,
         .{ .ignore_unknown_fields = true },
     );
-    errdefer parsed.deinit();
 
     const root = parsed.value.object;
-    const fs_val = root.get("filesystem") orelse return .{ .allocator = allocator, .filesystem = null, .parsed = parsed };
+    const fs_val = root.get("filesystem") orelse return .{ .filesystem = null, .parsed = parsed };
     const file_system = fs_val.object;
 
     return .{
-        .allocator = allocator,
         .filesystem = .{
             .allowRead = try parse_string_array(allocator, file_system.get("allowRead")),
             .denyRead = try parse_string_array(allocator, file_system.get("denyRead")),
@@ -73,16 +52,6 @@ fn from_json(allocator: std.mem.Allocator, raw: []const u8) !Config {
         },
         .parsed = parsed,
     };
-}
-
-pub fn deinit(self: *Config) void {
-    if (self.filesystem) |fs| {
-        self.allocator.free(fs.allowRead);
-        self.allocator.free(fs.denyRead);
-        self.allocator.free(fs.allowWrite);
-        self.allocator.free(fs.denyWrite);
-    }
-    if (self.parsed) |*p| p.deinit();
 }
 
 fn parse_string_array(allocator: std.mem.Allocator, val: ?std.json.Value) ![]const []const u8 {

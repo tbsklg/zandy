@@ -1,22 +1,22 @@
 # zandy
 
-A macOS security sandbox wrapper for [opencode](https://opencode.ai/). Launches `opencode` inside a restricted seatbelt sandbox to limit filesystem access and reduce the risk of sensitive data exposure.
+A macOS security sandbox wrapper for CLI coding agents. Launches a target binary inside a restricted seatbelt sandbox to limit filesystem and network access and reduce the risk of sensitive data exposure.
 
-zandy builds a [Seatbelt (SBPL) profile](https://github.com/apple-oss-distributions/Sandbox) in memory, applies it to the current process via the `sandbox_init_with_parameters` libsandbox call, then `execve`s `opencode`. Everything is denied by default; only the paths and services opencode needs are granted, so locations like `~/.ssh`, `~/.aws`, Keychain and browser data are never reachable.
+zandy builds a [Seatbelt (SBPL) profile](https://github.com/apple-oss-distributions/Sandbox) in memory, applies it to the current process via the `sandbox_init_with_parameters` libsandbox call, then `execve`s the target binary. Everything is denied by default; only the paths and services the target needs are granted, so locations like `~/.ssh`, `~/.aws`, Keychain and browser data are never reachable unless explicitly allowed via configuration.
 
-## Profiles
+## Presets
 
-| Profile | Working directory | Other filesystem | Network |
-|---------|-------------------|------------------|---------|
-| `default` | Full read/write (`file*`) | opencode config/state/cache dirs read/write; system paths needed to run; everything else denied | Allowed |
-| `network_only` | Read-only (`file-read*`) | same as `default` | Allowed |
+| Preset | Binary | Notes |
+|--------|--------|-------|
+| `opencode` | `opencode` | Outbound network only; config/state/cache dirs under `~/.config`, `~/.local/share`, `~/.local/state`, `~/.cache` |
+| `claude` | `claude` | Outbound network only; `~/.claude` and `~/.claude.json` |
 
-Both profiles share the same base ruleset; they differ only in the level of access granted to the working directory.
+Both presets share a similar filesystem shape (working directory access, `/private/tmp`, `/private/var`, homebrew) but grant access to the specific config/state paths each tool needs.
 
 ## Requirements
 
 - macOS
-- `opencode` available in `PATH`
+- The target binary (`opencode` or `claude`) available in `PATH`
 
 ## Install
 
@@ -40,9 +40,9 @@ The binary is written to `zig-out/bin/zandy`.
 ## Usage
 
 ```sh
-zandy                        # default profile
-zandy --profile network_only # network-only profile
-zandy --profile=network_only # equivalent
+zandy opencode # sandbox opencode
+zandy claude   # sandbox claude
+zandy --help
 ```
 
 ## Configuration
@@ -60,7 +60,7 @@ Place a `.zandy.json` in the working directory, or `~/.config/zandy/config.json`
 }
 ```
 
-These rules are appended to the active profile.
+These rules are appended to the active preset's profile.
 
 ## Scripts
 

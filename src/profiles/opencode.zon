@@ -30,6 +30,9 @@
         .{ .action = .allow, .operation = .file_all, .filter = .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/.config/opencode" } } } },
         .{ .action = .allow, .operation = .file_all, .filter = .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/dotfiles/config/opencode" } } } },
 
+        .{ .action = .deny, .operation = .file_write_all, .filter = .{ .literal = .{ .param_append = .{ .param = "HOME", .suffix = "/.config/opencode/opencode.json" } } } },
+        .{ .action = .deny, .operation = .file_write_all, .filter = .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/.config/opencode/plugin" } } } },
+
         .{ .action = .allow, .operation = .file_read_data, .filter = .{ .subpath = .{ .literal = "/opt/homebrew" } } },
         .{ .action = .allow, .operation = .file_read_all, .filter = .{ .literal = .{ .literal = "/opt/homebrew/bin/opencode" } } },
 
@@ -41,10 +44,16 @@
         .{ .action = .allow, .operation = .file_read_data, .filter = .{ .subpath = .{ .literal = "/private/tmp" } } },
 
         .{ .action = .allow, .operation = .file_read_data, .filter = .{ .subpath = .{ .literal = "/private/var" } } },
-        .{ .action = .allow, .operation = .file_write_data, .filter = .{ .subpath = .{ .literal = "/private/var" } } },
-        .{ .action = .allow, .operation = .file_write_create, .filter = .{ .subpath = .{ .literal = "/private/var" } } },
+        .{ .action = .allow, .operation = .file_write_data, .filter = .{ .subpath = .{ .param = "TMPDIR" } } },
+        .{ .action = .allow, .operation = .file_write_create, .filter = .{ .subpath = .{ .param = "TMPDIR" } } },
 
         .{ .action = .allow, .operation = .file_read_data, .filter = .{ .subpath = .{ .literal = "/Library/Preferences" } } },
+
+        .{ .action = .deny, .operation = .file_all, .filter = .{ .subpath = .{ .literal = "/private/tmp/com.apple.launchd" } } },
+        .{ .action = .deny, .operation = .file_all, .filter = .{ .subpath = .{ .literal = "/private/var/db" } } },
+        .{ .action = .deny, .operation = .file_all, .filter = .{ .subpath = .{ .literal = "/private/var/root" } } },
+
+        .{ .action = .allow, .operation = .file_all, .filter = .{ .subpath = .{ .param = "CWD" } } },
 
         .{ .action = .allow, .operation = .file_all, .filter = .{ .literal = .{ .literal = "/dev/null" } } },
         .{ .action = .allow, .operation = .file_read_data, .filter = .{ .literal = .{ .literal = "/dev" } } },

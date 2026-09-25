@@ -67,7 +67,11 @@ pub fn build(b: *std.Build) void {
     const test_sources = [_][]const u8{
         "src/main.zig",
         "src/sbpl.zig",
-        "src/opencode.zig",
+        "src/profile.zig",
+        "src/preset.zig",
+        "src/cli.zig",
+        "src/launch.zig",
+        "src/env.zig",
     };
 
     for (test_sources) |src| {

@@ -1,0 +1,41 @@
+@startuml architecture
+title zandy — component overview
+
+skinparam shadowing false
+
+package "src" {
+  [main] as main
+  [cli] as cli
+  [preset] as preset
+  [env] as env
+  [config] as config
+  [profile] as profile
+  [launch] as launch
+  [sbpl] as sbpl
+  [macos] as macos
+}
+
+database "profiles/*.zon" as zon
+component "libsandbox" as sandbox
+
+main --> cli : parse args
+main --> preset : find preset
+main --> env : env init
+main --> config : load config
+main --> profile : build profile
+main --> launch : launch
+
+preset --> sbpl
+preset ..> zon : comptime @import
+
+profile --> sbpl
+profile --> env
+profile --> config
+
+launch --> sbpl : serialize
+launch --> env
+launch --> macos
+
+macos --> sandbox : sandbox_init_with_parameters
+
+@enduml

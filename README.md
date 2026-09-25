@@ -82,3 +82,6 @@ Standalone POSIX shell scripts in `scripts/` that wrap a tool with `sandbox-exec
 ```sh
 zig build test
 ```
+
+## Troubleshooting
+- `opencode` does not start because of `operation not permitted mkdir '/var/folders/vg'`. The preset does not allow `opencode` to create a folder at that location. As a workaround start `opencode` without zandy first and then with zandy.

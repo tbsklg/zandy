@@ -3,38 +3,43 @@ title zandy — runtime flow
 
 skinparam shadowing false
 
+actor "user" as User
+participant "launcher\nbin/zandy-<name>" as Launcher
 participant "main" as Main
 participant "cli" as Cli
-participant "preset" as Preset
+participant "SandboxEnv" as SEnv
 participant "env" as Env
-participant "config" as Config
 participant "profile" as Profile
 participant "launch" as Launch
 participant "registry" as Registry
 participant "broker / rpc" as Broker
 participant "macos / libsandbox" as Sandbox
-participant "preset binary" as Bin
+participant "preset binary\nsandbox/bin/<binary>" as Bin
 participant "zandy-client" as Client
-participant "adapter binary" as Tool
+participant "adapter binary\n/nix/store/…" as Tool
 
+User -> Launcher : zandy-claude [args]  (or nix run)
+Launcher -> Main : exec zandy --env <env> [args]
 Main -> Cli : parseArgs(argv)
-Cli --> Main : Args
-Main -> Preset : find(args.preset)
-Preset --> Main : *Preset
+Cli --> Main : Launch (env, args)
+
+Main -> SEnv : load(env)
+SEnv -> SEnv : realpath → StorePath
+SEnv -> SEnv : parse store-paths → closure (+ env itself)
+SEnv -> SEnv : parse zandy.json → Manifest
+SEnv -> SEnv : no adapter binary in closure
+SEnv --> Main : SandboxEnv
 
 Main -> Env : Env.init(envMap)
 Env --> Main : Env (home, cwd, tmpdir)
-Main -> Config : Config.load(home, cwd)
-Config --> Main : ?Config
-Main -> Profile : buildProfile(preset.profile, env, config)
-Profile --> Main : sbpl.Profile
+Main -> Profile : buildProfile(preset.profile, env, filesystem, closure)
+Profile --> Main : sbpl.Profile (preset rules + exec/read per store path + filesystem)
 
-Main -> Launch : launch(init, preset, profile, env)
+Main -> Launch : launch(init, sandbox_env, args, profile, env)
 Launch -> Launch : serialize(profile) → SBPL text
-Launch -> Launch : findBinary(binary)
 Launch -> Broker : listen(BROKER_SOCK)
-Launch -> Launch : sandbox Environ.Map (allowlist + BROKER_SOCK, BROKER_TICKET)
-Launch -> Registry : parseAdapters(bundled_adapters)
+Launch -> Launch : sandbox Environ.Map (preset env names + PATH, SHELL, BROKER_SOCK, BROKER_TICKET)
+Launch -> Registry : parseAdapters(manifest.adapters)
 Registry --> Launch : []Capability
 
 Launch -> Launch : fork()
@@ -42,7 +47,7 @@ Launch -> Launch : fork()
 group child process
   Launch -> Sandbox : sandbox_init_with_parameters(sbpl, CWD, HOME, TMPDIR, BROKER_SOCK)
   Sandbox --> Launch : rc == 0
-  Launch -> Bin : execve(path, argv, sandbox envp)
+  Launch -> Bin : execve(sandbox/bin/<binary>, preset args + args, sandbox envp)
 end
 
 group parent process
@@ -54,7 +59,7 @@ group broker call
   Bin -> Client : zandy-client call <method> '<json args>'
   Client -> Broker : JSON-RPC {method, params: {ticket, args}}
   Broker -> Broker : check ticket, find (policy), parseParams, buildArgv
-  Broker -> Tool : spawn (PATH, HOME, adapter env)
+  Broker -> Tool : spawn by store path (PATH, HOME, adapter env)
   Tool --> Broker : exit code, stdout, stderr
   Broker --> Client : result = stdout | error = stderr
   Client --> Bin : stdout

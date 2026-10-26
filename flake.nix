@@ -8,18 +8,54 @@
   };
 
   outputs = { nixpkgs, zig-overlay, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+    let
+      lib = import ./nix/lib.nix { inherit zig-overlay; };
+    in
+    {
+      lib = { inherit (lib) mkSandboxEnv; };
+
+      presets = {
+        claude = import ./nix/presets/claude.nix;
+        opencode = import ./nix/presets/opencode.nix;
+      };
+
+      adapters = {
+        gitlab = import ./nix/adapters/gitlab.nix;
+        aws = import ./nix/adapters/aws.nix;
+      };
+
+      templates.default = {
+        path = ./templates/default;
+        description = "A zandy sandbox env: run with `nix run`, install with `nix profile install`";
+      };
+    }
+    // flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [ zig-overlay.overlays.default ];
+          config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [ "claude-code" ];
         };
+        zig = zig-overlay.packages.${system}."0.16.0";
+        inherit (lib.zandyFor pkgs) zandy zandy-client;
       in
       {
+        packages = {
+          inherit zandy zandy-client;
+          default = lib.mkSandboxEnv {
+            inherit pkgs;
+            name = "demo";
+            preset = import ./nix/presets/claude.nix;
+            packages = [ pkgs.ripgrep ];
+            backend.bedrock = { profile = "acme-bedrock"; region = "eu-west-1"; };
+            adapters = [
+              (import ./nix/adapters/gitlab.nix)
+              (import ./nix/adapters/aws.nix { profiles = [ "acme-dev" ]; })
+            ];
+          };
+        };
+
         devShells.default = pkgs.mkShell {
-          packages = [
-			 pkgs.zigpkgs."0.16.0"
-		  ];
+          packages = [ zig ];
         };
       });
 }

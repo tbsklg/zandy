@@ -3,12 +3,27 @@ title zandy — component overview
 
 skinparam shadowing false
 
+package "Nix (nix/, flake.nix)" {
+  [lib.mkSandboxEnv] as mk
+  [presets/*.nix] as presets
+  [adapters/*.nix] as nixadapters
+  [zandy package] as pkg
+}
+
+package "sandbox env (/nix/store/…-<name>)" {
+  artifact "bin/zandy-<name>\n(launcher)" as launcher
+  artifact "sandbox/bin\n(sandbox PATH)" as sbin
+  artifact "store-paths\n(exec allowlist)" as storepaths
+  artifact "zandy.json\n(manifest)" as manifestjson
+}
+
 package "src" {
   [main] as main
   [cli] as cli
-  [preset] as preset
+  [sandbox_env] as senv
+  [store] as store
+  [manifest] as manifest
   [env] as env
-  [config] as config
   [profile] as profile
   [launch] as launch
   [sbpl] as sbpl
@@ -20,32 +35,44 @@ package "src" {
   [client] as client
 }
 
-database "profiles/*.zon" as zon
-database "adapters/*.zon" as adapters
 component "libsandbox" as sandbox
-component "adapter binary\n(e.g. glab)" as tool
+component "adapter binary\n(/nix/store/…/bin/glab)" as tool
+
+mk --> presets
+mk --> nixadapters
+mk --> pkg
+mk --> launcher
+mk --> sbin : buildEnv
+mk --> storepaths : closureInfo
+mk --> manifestjson : toJSON
+
+launcher --> main : zandy --env <env>
 
 main --> cli : parse args
-main --> preset : find preset
+main --> senv : load(--env)
 main --> env : env init
-main --> config : load config
 main --> profile : build profile
 main --> launch : launch
 
-preset --> sbpl
-preset ..> zon : comptime @import
+senv --> store : parse root, store-paths
+senv --> manifest : parse zandy.json
+senv ..> storepaths
+senv ..> manifestjson
+
+manifest --> sbpl
+manifest --> registry
 
 profile --> sbpl
+profile --> store : exec/read rules
 profile --> env
-profile --> config
 
 launch --> sbpl : serialize
 launch --> env
 launch --> macos
 launch --> registry : parseAdapters
 launch --> broker : listen / serveLoop
+launch ..> sbin : PATH, binary
 
-registry ..> adapters : comptime @import
 registry --> command : parseTemplate
 
 broker --> rpc : handle

@@ -26,8 +26,6 @@ pub const Param = struct {
     choices: []const []const u8 = &.{},
 };
 
-pub const AdapterSettings = std.json.ArrayHashMap(std.json.ArrayHashMap([]const []const u8));
-
 pub const CapabilityConfig = struct {
     name: []const u8,
     description: []const u8,
@@ -43,11 +41,6 @@ pub const Adapter = struct {
     capabilities: []const CapabilityConfig,
 };
 
-pub const bundled_adapters = [_]Adapter{
-    @import("adapters/gitlab.zon"),
-    @import("adapters/aws.zon"),
-};
-
 pub const Capability = struct {
     name: []const u8,
     description: []const u8 = "",
@@ -58,15 +51,13 @@ pub const Capability = struct {
     argv: []const command.Segment = &.{},
 };
 
-pub fn parseAdapters(arena: std.mem.Allocator, adapters: []const Adapter, settings: AdapterSettings) ![]const Capability {
+pub fn parseAdapters(arena: std.mem.Allocator, adapters: []const Adapter) ![]const Capability {
     var capabilities: std.ArrayList(Capability) = .empty;
     for (adapters) |adapter| {
         next: for (adapter.capabilities) |config| {
-            const params = try arena.dupe(Param, config.params);
-            for (params) |*param| {
-                if (param.kind != .choice) continue;
-                const params_settings = settings.map.get(adapter.name) orelse continue :next;
-                param.choices = params_settings.map.get(param.name) orelse continue :next;
+            const params = config.params;
+            for (params) |param| {
+                if (param.kind == .choice and param.choices.len == 0) continue :next;
             }
             try capabilities.append(arena, .{
                 .name = try std.fmt.allocPrint(arena, "{s}.{s}", .{ adapter.name, config.name }),
@@ -218,20 +209,13 @@ test "parseAdapters prefixes names and parses argv templates" {
         }},
     }};
 
-    const capabilities = try parseAdapters(arena_state.allocator(), &adapters, .{});
+    const capabilities = try parseAdapters(arena_state.allocator(), &adapters);
 
     try std.testing.expectEqual(1, capabilities.len);
     try std.testing.expectEqualStrings("gitlab.issues.list", capabilities[0].name);
     try std.testing.expectEqualStrings("glab", capabilities[0].binary);
     try std.testing.expectEqualStrings("GITLAB_TOKEN", capabilities[0].env[0]);
     try std.testing.expectEqual(0, capabilities[0].argv[3].param);
-}
-
-test "parseAdapters accepts the bundled adapters" {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-
-    _ = try parseAdapters(arena_state.allocator(), &bundled_adapters, .{});
 }
 
 test "parseAdapters rejects a template with an unknown placeholder" {
@@ -250,31 +234,40 @@ test "parseAdapters rejects a template with an unknown placeholder" {
         }},
     }};
 
-    try std.testing.expectError(error.UnknownPlaceholder, parseAdapters(arena_state.allocator(), &adapters, .{}));
+    try std.testing.expectError(error.UnknownPlaceholder, parseAdapters(arena_state.allocator(), &adapters));
 }
 
-test "parseAdapters fills choice params from the config" {
+fn awsAdapter(comptime choices: []const []const u8) Adapter {
+    return .{
+        .name = "aws",
+        .binary = "/nix/store/lw5h7x6kxqdx6m8wnsqjjzj6fd1i9x2j-awscli2-2.0/bin/aws",
+        .capabilities = &.{.{
+            .name = "cli",
+            .description = "Run aws.",
+            .effect = .admin,
+            .params = &.{ .{ .name = "profile", .kind = .choice, .choices = choices }, .{ .name = "args", .kind = .list } },
+            .argv = &.{ "{args}", "--profile", "{profile}" },
+        }},
+    };
+}
+
+test "parseAdapters keeps a choice param's values" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    const arena = arena_state.allocator();
+    const adapters = [_]Adapter{awsAdapter(&.{ "acme-dev", "acme-int" })};
+    const capabilities = try parseAdapters(arena_state.allocator(), &adapters);
 
-    const settings = try std.json.parseFromSliceLeaky(AdapterSettings, arena,
-        \\{"aws":{"profile":["acme-dev","acme-int"]}}
-    , .{});
-    const capabilities = try parseAdapters(arena, &bundled_adapters, settings);
-
-    const cli = for (capabilities) |cap| {
-        if (std.mem.eql(u8, cap.name, "aws.cli")) break cap;
-    } else return error.TestExpectedAwsCli;
-    try std.testing.expectEqualStrings("acme-int", cli.params[0].choices[1]);
+    try std.testing.expectEqualStrings("aws.cli", capabilities[0].name);
+    try std.testing.expectEqualStrings("acme-int", capabilities[0].params[0].choices[1]);
 }
 
-test "parseAdapters drops a capability whose choice param has no configured values" {
+test "parseAdapters drops a capability whose choice param has no values" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    const capabilities = try parseAdapters(arena_state.allocator(), &bundled_adapters, .{});
+    const adapters = [_]Adapter{awsAdapter(&.{})};
+    const capabilities = try parseAdapters(arena_state.allocator(), &adapters);
 
-    for (capabilities) |cap| try std.testing.expect(!std.mem.eql(u8, cap.name, "aws.cli"));
+    try std.testing.expectEqual(0, capabilities.len);
 }

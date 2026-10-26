@@ -6,21 +6,20 @@ const rpc = @import("rpc.zig");
 const registry = @import("registry.zig");
 
 const Env = @import("env.zig");
-const Preset = @import("preset.zig").Preset;
-const Config = @import("config.zig");
-const backend_mod = @import("backend.zig");
+const SandboxEnv = @import("sandbox_env.zig");
 
-pub fn launch(init: std.process.Init, preset: *const Preset, profile: sbpl.Profile, env: Env, cfg: ?Config) !void {
+pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []const [:0]const u8, profile: sbpl.Profile, env: Env) !void {
     const arena = init.arena.allocator();
     const io = init.io;
     const environ = init.environ_map;
+    const manifest = sandbox_env.manifest;
+    const preset = manifest.preset;
+    const bin_dir = sandbox_env.bin;
 
     const profile_z = try serialize(arena, profile);
-    const path = try findBinary(arena, io, preset.binary);
+    const path = try std.fs.path.joinZ(arena, &.{ bin_dir, preset.binary });
 
-    const config: Config = cfg orelse .{ .filesystem = null };
-
-    const extra_args = try preset.args(arena, config.backend);
+    const extra_args = try std.mem.concat(arena, [:0]const u8, &.{ preset.args, user_args });
     const argv = try arena.allocSentinel(?[*:0]const u8, 1 + extra_args.len, null);
     argv[0] = preset.binary.ptr;
     for (extra_args, argv[1..]) |arg, *slot| slot.* = arg.ptr;
@@ -51,11 +50,13 @@ pub fn launch(init: std.process.Init, preset: *const Preset, profile: sbpl.Profi
     for (preset.env) |name| {
         if (environ.get(name)) |value| try sandbox_environ.put(name, value);
     }
+    try sandbox_environ.put("PATH", bin_dir);
+    try sandbox_environ.put("SHELL", try std.fs.path.join(arena, &.{ bin_dir, "bash" }));
     try sandbox_environ.put("BROKER_SOCK", sock_path);
     try sandbox_environ.put("BROKER_TICKET", &ticket);
     const envp = try sandbox_environ.createPosixBlock(arena, .{});
 
-    const ctx: rpc.Context = .{ .ticket = &ticket, .registry = .{ .capabilities = try capabilities(arena, config) }, .policy = config.policy, .environ = environ };
+    const ctx: rpc.Context = .{ .ticket = &ticket, .registry = .{ .capabilities = try registry.parseAdapters(arena, manifest.adapters) }, .policy = manifest.policy, .environ = environ };
 
     const pid = std.c.fork();
     if (pid == -1) return error.ForkFailed;
@@ -88,13 +89,6 @@ pub fn launch(init: std.process.Init, preset: *const Preset, profile: sbpl.Profi
     std.log.debug("Child process terminated", .{});
 }
 
-pub fn capabilities(arena: std.mem.Allocator, config: Config) ![]const registry.Capability {
-    var all: std.ArrayList(registry.Capability) = .empty;
-    try all.appendSlice(arena, try registry.parseAdapters(arena, &registry.bundled_adapters, config.adapters));
-    if (try backend_mod.capability(arena, config.backend)) |cap| try all.append(arena, cap);
-    return all.items;
-}
-
 fn serialize(allocator: std.mem.Allocator, profile: sbpl.Profile) ![:0]u8 {
     var aw = std.Io.Writer.Allocating.init(allocator);
     defer aw.deinit();
@@ -102,13 +96,4 @@ fn serialize(allocator: std.mem.Allocator, profile: sbpl.Profile) ![:0]u8 {
     try profile.write(&aw.writer);
 
     return allocator.dupeZ(u8, aw.written());
-}
-
-fn findBinary(allocator: std.mem.Allocator, io: std.Io, binary: []const u8) ![:0]u8 {
-    const result = try std.process.run(allocator, io, .{ .argv = &.{ "/usr/bin/which", binary } });
-
-    const path = std.mem.trimEnd(u8, result.stdout, "\n\r ");
-    if (path.len == 0) return error.BinaryNotFound;
-
-    return allocator.dupeZ(u8, path);
 }

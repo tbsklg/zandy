@@ -1,52 +1,69 @@
 const std = @import("std");
 
 pub const Command = union(enum) {
-    launch: []const u8,
-    config,
+    launch: Launch,
+    config: []const u8,
+};
+
+pub const Launch = struct {
+    env: []const u8,
+    args: []const [:0]const u8,
 };
 
 pub fn parseArgs(args: []const [:0]const u8) !Command {
-    if (args.len < 2) return error.NoPreset;
-    if (args.len > 2) return error.UnexpectedArgs;
+    if (args.len < 2) return error.NoEnv;
     if (std.mem.eql(u8, args[1], "--help")) return error.Help;
-    if (std.mem.eql(u8, args[1], "config")) return .config;
+    if (std.mem.eql(u8, args[1], "config")) {
+        if (args.len != 4 or !std.mem.eql(u8, args[2], "--env")) return error.NoEnv;
+        return .{ .config = args[3] };
+    }
+    if (!std.mem.eql(u8, args[1], "--env")) return error.NoEnv;
+    if (args.len < 3) return error.NoEnv;
 
-    return .{ .launch = args[1] };
+    return .{ .launch = .{ .env = args[2], .args = args[3..] } };
 }
 
 pub const usage =
-    \\usage: zandy <preset>
-    \\       zandy config    show the effective config and the methods the agent sees
+    \\usage: zandy --env <drv> [args...]
+    \\       zandy config --env <drv>    show the manifest and the methods the agent sees
     \\
-    \\presets:
-    \\  opencode    sandbox opencode with its builtin profile
-    \\  claude      sandbox claude with its builtin profile
+    \\  <drv>  sandbox env built by zandy.lib.mkSandboxEnv, e.g. ./result
+    \\         usually started with `nix run .#sandbox`
+    \\
 ;
 
-test "returns error when no preset" {
-    const args = [_][:0]const u8{"zandy"};
+test "returns error when --env is missing" {
+    const args = [_][:0]const u8{ "zandy", "claude" };
 
-    try std.testing.expectError(error.NoPreset, parseArgs(&args));
+    try std.testing.expectError(error.NoEnv, parseArgs(&args));
 }
 
-test "returns error when unexpected args" {
-    const args = [_][:0]const u8{ "zandy", "foo", "bar" };
+test "returns error when --env has no value" {
+    const args = [_][:0]const u8{ "zandy", "--env" };
 
-    try std.testing.expectError(error.UnexpectedArgs, parseArgs(&args));
+    try std.testing.expectError(error.NoEnv, parseArgs(&args));
 }
 
-test "returns args with preset" {
-    const args = [_][:0]const u8{ "zandy", "foo" };
+test "returns env and passes args through" {
+    const args = [_][:0]const u8{ "zandy", "--env", "./result", "-p", "hi" };
 
     const parsed = try parseArgs(&args);
 
-    try std.testing.expectEqualStrings("foo", parsed.launch);
+    try std.testing.expectEqualStrings("./result", parsed.launch.env);
+    try std.testing.expectEqual(2, parsed.launch.args.len);
+    try std.testing.expectEqualStrings("-p", parsed.launch.args[0]);
 }
 
-test "returns config command" {
+test "returns config command with its env" {
+    const args = [_][:0]const u8{ "zandy", "config", "--env", "./result" };
+
+    try std.testing.expectEqualStrings("./result", (try parseArgs(&args)).config);
+}
+
+test "returns error when config has no env" {
     const args = [_][:0]const u8{ "zandy", "config" };
 
-    try std.testing.expectEqual(.config, try parseArgs(&args));
+    try std.testing.expectError(error.NoEnv, parseArgs(&args));
 }
 
 test "returns help for --help" {

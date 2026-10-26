@@ -1,20 +1,26 @@
 const std = @import("std");
 const sbpl = @import("sbpl.zig");
+const store = @import("store.zig");
 
-const Config = @import("config.zig");
+const FileSystem = @import("manifest.zig").FileSystem;
 const Env = @import("env.zig");
 const Rule = sbpl.Rule;
 
-pub fn buildProfile(arena: std.mem.Allocator, base: sbpl.Profile, env: Env, config: ?Config) !sbpl.Profile {
-    const fs_rules = try buildFilesystemRules(arena, env, config);
-    const rules = try std.mem.concat(arena, sbpl.Rule, &.{ base.rules, fs_rules, &config_rules });
-    return .{ .rules = rules };
+pub fn buildProfile(arena: std.mem.Allocator, base: sbpl.Profile, env: Env, fs: FileSystem, store_paths: []const store.StorePath) !sbpl.Profile {
+    const fs_rules = try buildFilesystemRules(arena, env, fs);
+    const rules = try std.mem.concat(arena, sbpl.Rule, &.{ base.rules, try storeRules(arena, store_paths), fs_rules });
+    return .{ .version = base.version, .deny_default = base.deny_default, .rules = rules };
 }
 
-const config_rules = [_]Rule{
-    Rule.deny(.file_write_all, .{ .literal = .{ .param_append = .{ .param = "CWD", .suffix = "/" ++ Config.local_file } } }),
-    Rule.deny(.file_write_all, .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/" ++ Config.global_dir } } }),
-};
+fn storeRules(arena: std.mem.Allocator, store_paths: []const store.StorePath) ![]Rule {
+    const rules = try arena.alloc(Rule, store_paths.len * 2);
+    for (store_paths, 0..) |p, i| {
+        const filter: sbpl.Filter = .{ .subpath = .{ .literal = p.path } };
+        rules[2 * i] = Rule.allow(.process_exec, filter);
+        rules[2 * i + 1] = Rule.allow(.file_read_all, filter);
+    }
+    return rules;
+}
 
 fn resolvePath(arena: std.mem.Allocator, home: []const u8, cwd: []const u8, path: []const u8) ![]u8 {
     if (std.mem.startsWith(u8, path, "~/")) {
@@ -24,10 +30,7 @@ fn resolvePath(arena: std.mem.Allocator, home: []const u8, cwd: []const u8, path
     return std.fs.path.join(arena, &.{ cwd, path });
 }
 
-fn buildFilesystemRules(arena: std.mem.Allocator, env: Env, config: ?Config) ![]Rule {
-    const c = config orelse return &.{};
-    const fs = c.filesystem orelse return &.{};
-
+fn buildFilesystemRules(arena: std.mem.Allocator, env: Env, fs: FileSystem) ![]Rule {
     const Entry = struct { action: sbpl.Action, op: sbpl.Operation, paths: []const []const u8 };
     const entries = [_]Entry{
         .{ .action = .allow, .op = .file_read_all, .paths = fs.allowRead },
@@ -57,13 +60,11 @@ test "build filesystem rules from config" {
     const allowWrite = [_][]const u8{"/abs/write"};
     const empty = [_][]const u8{};
 
-    const cfg = Config{
-        .filesystem = .{
-            .allowRead = &allowRead,
-            .denyRead = &denyRead,
-            .allowWrite = &allowWrite,
-            .denyWrite = &empty,
-        },
+    const cfg = FileSystem{
+        .allowRead = &allowRead,
+        .denyRead = &denyRead,
+        .allowWrite = &allowWrite,
+        .denyWrite = &empty,
     };
 
     const rules = try buildFilesystemRules(arena_state.allocator(), .{ .home = "/Users/test", .cwd = "/Users/test/cwd", .tmpdir = "/private/tmp" }, cfg);
@@ -77,24 +78,24 @@ test "build filesystem rules from config" {
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file-write* (subpath \"/abs/write\"))") != null);
 }
 
-test "zandy's own config stays read-only even when the user allows writing its directory" {
+test "store paths may be executed and read, nothing else in the store" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const allowWrite = [_][]const u8{"~/.config"};
-    const empty = [_][]const u8{};
-    const cfg = Config{ .filesystem = .{ .allowRead = &empty, .denyRead = &empty, .allowWrite = &allowWrite, .denyWrite = &empty } };
+    const store_paths = [_]store.StorePath{
+        try store.parse("/nix/store/lw5h7x6kxqdx6m8wnsqjjzj6fd1i9x2j-ripgrep-15.2.0"),
+        try store.parse("/nix/store/7f0sryhgq9arkgzmv2pfzyxn40p7j69f-pcre2-10.48"),
+    };
 
-    const profile = try buildProfile(arena, .{ .rules = &.{} }, .{ .home = "/Users/acme", .cwd = "/Users/acme/widgets", .tmpdir = "/private/tmp" }, cfg);
+    const profile = try buildProfile(arena, .{ .rules = &.{} }, .{ .home = "/Users/acme", .cwd = "/Users/acme/widgets", .tmpdir = "/private/tmp" }, .{}, &store_paths);
 
     var aw = std.Io.Writer.Allocating.init(arena);
     try profile.write(&aw.writer);
     const written = aw.written();
 
-    const allow = std.mem.indexOf(u8, written, "(allow file-write* (subpath \"/Users/acme/.config\"))").?;
-    const deny_global = std.mem.indexOf(u8, written, "(deny file-write* (subpath (string-append (param \"HOME\") \"/.config/zandy\")))").?;
-    const deny_local = std.mem.indexOf(u8, written, "(deny file-write* (literal (string-append (param \"CWD\") \"/.zandy.json\")))").?;
-    try std.testing.expect(allow < deny_global);
-    try std.testing.expect(allow < deny_local);
+    try std.testing.expect(std.mem.indexOf(u8, written, "(allow process-exec (subpath \"/nix/store/lw5h7x6kxqdx6m8wnsqjjzj6fd1i9x2j-ripgrep-15.2.0\"))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "(allow file-read* (subpath \"/nix/store/lw5h7x6kxqdx6m8wnsqjjzj6fd1i9x2j-ripgrep-15.2.0\"))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "(allow process-exec (subpath \"/nix/store/7f0sryhgq9arkgzmv2pfzyxn40p7j69f-pcre2-10.48\"))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "(subpath \"/nix/store\")") == null);
 }

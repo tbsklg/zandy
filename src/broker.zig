@@ -43,7 +43,6 @@ pub fn removeSocketDir(io: std.Io, path: []const u8) !void {
     try std.Io.Dir.deleteDirAbsolute(io, path);
 }
 
-
 fn readLine(reader: *std.Io.Reader) ![]u8 {
     return try reader.takeDelimiterExclusive('\n');
 }
@@ -86,7 +85,6 @@ pub fn serveLoop(io: std.Io, gpa: std.mem.Allocator, server: *std.Io.net.Server,
 pub fn sessionDirPath(buf: []u8, home: []const u8, pid: i32) ![]u8 {
     return std.fmt.bufPrint(buf, "{s}/.zandy/run/{d}", .{ home, pid });
 }
-
 
 const test_ticket = "a" ** rpc.ticket_len;
 const test_ctx: rpc.Context = .{ .ticket = test_ticket, .registry = .{ .capabilities = &.{} } };

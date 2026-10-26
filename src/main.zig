@@ -1,11 +1,11 @@
 const std = @import("std");
 const profile_mod = @import("profile.zig");
-const preset_mod = @import("preset.zig");
 const launch_mod = @import("launch.zig");
+const registry_mod = @import("registry.zig");
 const cli = @import("cli.zig");
 
-const Config = @import("config.zig");
 const Env = @import("env.zig");
+const SandboxEnv = @import("sandbox_env.zig");
 
 pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
@@ -24,29 +24,33 @@ pub fn main(init: std.process.Init) !void {
         },
     };
 
-    const env = try Env.init(arena, io, envMap);
-    const cfg = try Config.load(arena, io, env.home, env.cwd);
-
-    const preset_name = switch (command) {
-        .launch => |name| name,
-        .config => return showConfig(arena, io, cfg orelse .{ .filesystem = null }),
+    const env_path = switch (command) {
+        .launch => |launch| launch.env,
+        .config => |env_path| env_path,
     };
-    const preset = preset_mod.find(preset_name) orelse {
-        std.debug.print("zandy: unknown preset '{s}'", .{preset_name});
+    const sandbox_env = SandboxEnv.load(arena, io, env_path) catch |err| {
+        std.debug.print("zandy: --env '{s}' is not a sandbox env built by zandy.lib.mkSandboxEnv: {t}\n", .{ env_path, err });
         std.process.exit(1);
     };
-    const profile = try profile_mod.buildProfile(arena, preset.profile, env, cfg);
 
-    try launch_mod.launch(init, preset, profile, env, cfg);
+    const launch = switch (command) {
+        .launch => |launch| launch,
+        .config => return showConfig(arena, io, sandbox_env),
+    };
+
+    const env = try Env.init(arena, io, envMap);
+    const profile = try profile_mod.buildProfile(arena, sandbox_env.manifest.preset.profile, env, sandbox_env.manifest.filesystem, sandbox_env.closure);
+
+    try launch_mod.launch(init, sandbox_env, launch.args, profile, env);
 }
 
-fn showConfig(arena: std.mem.Allocator, io: std.Io, cfg: Config) !void {
-    const capabilities = try launch_mod.capabilities(arena, cfg);
-    const registry: @import("registry.zig").Registry = .{ .capabilities = capabilities };
-    const discovered = try std.json.parseFromSliceLeaky(std.json.Value, arena, try registry.discover(arena, cfg.policy), .{});
+fn showConfig(arena: std.mem.Allocator, io: std.Io, sandbox_env: SandboxEnv) !void {
+    const manifest = sandbox_env.manifest;
+    const registry: registry_mod.Registry = .{ .capabilities = try registry_mod.parseAdapters(arena, manifest.adapters) };
+    const discovered = try std.json.parseFromSliceLeaky(std.json.Value, arena, try registry.discover(arena, manifest.policy), .{});
 
     var buf: [4096]u8 = undefined;
     var stdout = std.Io.File.stdout().writerStreaming(io, &buf);
-    try stdout.interface.print("{f}\n", .{std.json.fmt(.{ .config = cfg, .discover = discovered }, .{ .whitespace = .indent_2 })});
+    try stdout.interface.print("{f}\n", .{std.json.fmt(.{ .env = sandbox_env.root.path, .manifest = manifest, .discover = discovered }, .{ .whitespace = .indent_2 })});
     try stdout.interface.flush();
 }

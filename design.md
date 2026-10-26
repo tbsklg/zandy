@@ -1,6 +1,6 @@
 # Zandy Design
 
-A macOS sandbox launcher with builtin profiles for well-known apps, inspired by OpenBSD's pledge().
+A macOS sandbox launcher with builtin profiles for well-known apps, built around Nix.
 
 ## API
 
@@ -16,16 +16,17 @@ A preset is the minimum correct set of sandbox permissions an app needs to funct
 
 Presets are always required — there is no raw mode. Without a preset, the sandboxed process would crash or hang because the user can't know which mach lookups, IPC, or system operations an app requires.
 
-## Nix
+## Nix, Zig and Seatbelt
 
-Nix is required and is the only source of truth. `zandy.lib.mkSandboxEnv` builds one derivation per sandbox:
+Nix decides what goes into a sandbox, at build time. Zig turns that into a sandbox profile and runs the broker. Seatbelt, the macOS kernel sandbox, enforces the profile.
 
-- `sandbox/bin`: `buildEnv` of the preset's packages, `zandy-client` and the project's `packages`. The only `PATH` inside the sandbox; the preset's binary is `sandbox/bin/<binary>`.
-- `store-paths`: the closure of `sandbox/bin` (`closureInfo`), one store path per line.
-- `zandy.json`: the manifest: preset (binary, env names, args, SBPL rules), adapters (store-path binary, env names, capabilities with their choice values), policy, filesystem.
-- `bin/zandy-<name>`: the launcher, `exec zandy --env $out "$@"`, so `nix run` works.
+![overview](docs/overview.png)
 
-`zandy --env` resolves the path and parses it as a `StorePath`; `SandboxEnv.parse` turns `store-paths` and `zandy.json` into precise types. Every store path in the closure, plus the env itself, gets `(allow process-exec (subpath …))` and `(allow file-read* (subpath …))`; there is no blanket `process-exec`.
+**Nix describes the sandbox.** It decides which tools live inside, which stay outside behind the broker, and what the agent may ask for. The result is reproducible, read-only and holds no secrets.
+
+**Zig connects the two.** It translates what Nix described into a Seatbelt profile, brings in secrets only outside the sandbox, and mediates every request that crosses the boundary.
+
+**Seatbelt enforces it.** The kernel confines the agent to that profile: what it may read, write, execute and connect to. Once applied, the agent can't loosen it.
 
 ## Broker
 
@@ -44,22 +45,16 @@ broker: ticket → find (policy) → parseParams → buildArgv → run
 
 ### Decisions
 
-- **Adapters group capabilities.** An adapter owns what its capabilities share: `binary`, `env`, and the name prefix. Each capability has `params` and an `argv` template. `parseAdapters` turns adapters into a flat `[]const Capability` at broker start.
-- **Parse, don't validate.** Config and requests are parsed into types the rest of the code relies on: `parseTemplate` turns `argv` into `Segment`s (`literal` or `param` index), `parseParams` turns `args` into `Args`. `buildArgv` only accepts those.
-- **No shell, whole entries.** Placeholders must be a whole argv entry (`"{project}"`). A `string` param becomes one entry and may not start with `-`, so it can't become a flag. A `list` param expands into one entry per item and allows flags. A `choice` param only accepts its configured values (e.g. `aws { profiles = [ … ]; }`); without values the capability isn't offered.
-- **The outer process sets the scope.** The broker doesn't judge commands. `gitlab.cli` and `aws.cli` pass everything through; the token's scopes and the profile's IAM permissions decide. The broker keeps credentials outside and appends the chosen `--profile` last, so it wins.
-- **Honest effects.** Passthrough capabilities are `admin` and need `policy.admin = "allow"`.
-- **Backend credentials come from the broker.** `backend` is `bedrock` (`profile`, `region`), required by the claude preset. `mkSandboxEnv` adds the `backend.credentials` adapter (`aws configure export-credentials`), and the claude preset's args get `--settings` with `awsCredentialExport` pointing at it. The agent can call it too, so the profile's account should only host Bedrock.
-- **The agent is told.** Each preset passes its own startup args; claude gets `--append-system-prompt` explaining `zandy-client`.
-- **No secrets in Nix.** `/nix/store` is world-readable. The manifest holds env names; values come from zandy's environment at launch.
-- **Adapters stay outside.** An adapter's package must not be in the sandbox closure: `mkSandboxEnv` asserts it for direct packages, `SandboxEnv.parse` checks every adapter binary against the whole closure.
-- **Only `allow`.** `discover` and calls only see capabilities whose effect the policy allows (`read` by default, configurable via `policy` in `mkSandboxEnv`). `ask` behaves like `deny` until there is a prompt.
-- **Allowlisted environment.** zandy never edits its own environment. The sandboxed process gets a fresh `Environ.Map` with only the names its preset lists in `env`, plus `BROKER_SOCK`/`BROKER_TICKET`. There is no shared base list; each preset declares everything its process needs. Everything else, including adapter secrets, stays out. The adapter command gets only `PATH`, `HOME` and its adapter's `env`.
-- **Exec allowlist, with one exception.** Only the env's closure may be executed. The claude preset may also exec `/bin/sh` and `/bin/bash`: Claude Code runs `awsCredentialExport`, hooks and statusline commands with a hardcoded `/bin/sh`, which execs `/bin/bash`. `#!/usr/bin/env` shebangs fail; run scripts with their interpreter. Interpreters in the closure can still run arbitrary code, so the allowlist is defense in depth.
-- **Protected files.** The working directory is writable, except for files that define the sandbox or run outside it later: `flake.nix`, `flake.lock`, `.envrc`, `.git`, `.git/config`, `.git/hooks`. `profile.zig` appends these denies last and for `file-write*`, `file-write-create` and `file-write-data`, because SBPL lets a rule for a specific operation beat `file-write*` regardless of order. Neither a preset nor `filesystem.allowWrite` can lift them.
-- **Network is narrowed, not closed.** The profiles only allow TCP to `*:443`, the DNS socket, and `(param "BROKER_SOCK")`. TCP can't be restricted by hostname in SBPL, so keeping secrets out of the sandbox (env, files, keychain) is the actual protection.
-- **Config comes from the env.** Adapters, presets and policy are Nix; zandy has no config files and parses everything at runtime from `zandy.json`.
-- **Thin client.** `zandy-client` passes JSON through and prints the result. The agent reads the `discover` JSON directly.
+- **Adapters group capabilities.** An adapter holds the shared `binary`, `env` and name prefix; each capability adds `params` and an `argv` template.
+- **Parse, don't validate.** Config and requests are parsed into precise types; `buildArgv` only accepts those.
+- **No shell.** Each placeholder is a whole argv entry. `string` params can't start with `-`, `list` params can, `choice` params only take configured values.
+- **The outer process sets the scope.** The broker doesn't judge commands; token scopes and IAM permissions do.
+- **Only `allow`.** The agent only sees capabilities whose effect the policy allows (`read` by default). Passthrough capabilities are `admin`.
+- **Backend credentials come from the broker.** The claude preset fetches its Bedrock credentials through the `backend.credentials` adapter.
+- **No secrets in the sandbox.** The manifest holds env names, values come from zandy's environment. The sandbox gets only its preset's `env` plus `BROKER_SOCK`/`BROKER_TICKET`; adapter binaries stay outside its closure.
+- **Exec allowlist.** Only the env's closure may be executed, plus `/bin/sh` and `/bin/bash` for claude.
+- **Protected files.** The working directory is writable, except `flake.nix`, `flake.lock`, `.envrc` and `.git`.
+- **Network is narrowed.** Only TCP to `*:443`, DNS and the broker socket.
 
 ## Known issues
 

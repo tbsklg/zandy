@@ -114,9 +114,19 @@ pub const Filter = union(enum) {
     global_name: []const u8,
     socket_domain: u32,
     target: []const u8,
+    remote_tcp: []const u8,
+    remote_unix_socket: Expr,
 
     pub fn write(self: Filter, writer: anytype) !void {
         switch (self) {
+            .remote_tcp => |address| {
+                try writer.print("(remote tcp \"{s}\")", .{address});
+            },
+            .remote_unix_socket => |expr| {
+                try writer.writeAll("(remote unix-socket (path-literal ");
+                try expr.write(writer);
+                try writer.writeAll("))");
+            },
             .subpath => |expr| {
                 try writer.writeAll("(subpath ");
                 try expr.write(writer);
@@ -168,6 +178,16 @@ test "write filter" {
 
     try (Filter{ .socket_domain = 32 }).write(w);
     try std.testing.expectEqualStrings("(socket-domain 32)", aw.written());
+
+    aw.clearRetainingCapacity();
+
+    try (Filter{ .remote_tcp = "*:443" }).write(w);
+    try std.testing.expectEqualStrings("(remote tcp \"*:443\")", aw.written());
+
+    aw.clearRetainingCapacity();
+
+    try (Filter{ .remote_unix_socket = .{ .param = "BROKER_SOCK" } }).write(w);
+    try std.testing.expectEqualStrings("(remote unix-socket (path-literal (param \"BROKER_SOCK\")))", aw.written());
 }
 
 pub const Rule = struct {

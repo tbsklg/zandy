@@ -10,8 +10,12 @@ participant "env" as Env
 participant "config" as Config
 participant "profile" as Profile
 participant "launch" as Launch
+participant "registry" as Registry
+participant "broker / rpc" as Broker
 participant "macos / libsandbox" as Sandbox
 participant "preset binary" as Bin
+participant "zandy-client" as Client
+participant "adapter binary" as Tool
 
 Main -> Cli : parseArgs(argv)
 Cli --> Main : Args
@@ -19,26 +23,41 @@ Main -> Preset : find(args.preset)
 Preset --> Main : *Preset
 
 Main -> Env : Env.init(envMap)
-Env --> Main : Env (home, cwd)
+Env --> Main : Env (home, cwd, tmpdir)
 Main -> Config : Config.load(home, cwd)
 Config --> Main : ?Config
 Main -> Profile : buildProfile(preset.profile, env, config)
 Profile --> Main : sbpl.Profile
 
-Main -> Launch : launch(binary, profile, env)
+Main -> Launch : launch(init, preset, profile, env)
 Launch -> Launch : serialize(profile) → SBPL text
 Launch -> Launch : findBinary(binary)
+Launch -> Broker : listen(BROKER_SOCK)
+Launch -> Launch : sandbox Environ.Map (allowlist + BROKER_SOCK, BROKER_TICKET)
+Launch -> Registry : parseAdapters(bundled_adapters)
+Registry --> Launch : []Capability
 
 Launch -> Launch : fork()
 
 group child process
-  Launch -> Sandbox : sandbox_init_with_parameters(sbpl, CWD, HOME)
+  Launch -> Sandbox : sandbox_init_with_parameters(sbpl, CWD, HOME, TMPDIR, BROKER_SOCK)
   Sandbox --> Launch : rc == 0
-  Launch -> Bin : execve(path, argv, envp=empty)
+  Launch -> Bin : execve(path, argv, sandbox envp)
 end
 
 group parent process
+  Launch -> Broker : serveLoop (thread)
   Launch -> Launch : waitpid(child)
+end
+
+group broker call
+  Bin -> Client : zandy-client call <method> '<json args>'
+  Client -> Broker : JSON-RPC {method, params: {ticket, args}}
+  Broker -> Broker : check ticket, find (policy), parseParams, buildArgv
+  Broker -> Tool : spawn (PATH, HOME, adapter env)
+  Tool --> Broker : exit code, stdout, stderr
+  Broker --> Client : result = stdout | error = stderr
+  Client --> Bin : stdout
 end
 
 @enduml

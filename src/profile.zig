@@ -7,9 +7,14 @@ const Rule = sbpl.Rule;
 
 pub fn buildProfile(arena: std.mem.Allocator, base: sbpl.Profile, env: Env, config: ?Config) !sbpl.Profile {
     const fs_rules = try buildFilesystemRules(arena, env, config);
-    const rules = try std.mem.concat(arena, sbpl.Rule, &.{ base.rules, fs_rules });
+    const rules = try std.mem.concat(arena, sbpl.Rule, &.{ base.rules, fs_rules, &config_rules });
     return .{ .rules = rules };
 }
+
+const config_rules = [_]Rule{
+    Rule.deny(.file_write_all, .{ .literal = .{ .param_append = .{ .param = "CWD", .suffix = "/" ++ Config.local_file } } }),
+    Rule.deny(.file_write_all, .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/" ++ Config.global_dir } } }),
+};
 
 fn resolvePath(arena: std.mem.Allocator, home: []const u8, cwd: []const u8, path: []const u8) ![]u8 {
     if (std.mem.startsWith(u8, path, "~/")) {
@@ -53,7 +58,6 @@ test "build filesystem rules from config" {
     const empty = [_][]const u8{};
 
     const cfg = Config{
-        .parsed = null,
         .filesystem = .{
             .allowRead = &allowRead,
             .denyRead = &denyRead,
@@ -71,4 +75,26 @@ test "build filesystem rules from config" {
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file-read* (subpath \"/Users/test/tilde/allow\"))") != null);
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(deny file-read* (subpath \"/abs/deny\"))") != null);
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "(allow file-write* (subpath \"/abs/write\"))") != null);
+}
+
+test "zandy's own config stays read-only even when the user allows writing its directory" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const allowWrite = [_][]const u8{"~/.config"};
+    const empty = [_][]const u8{};
+    const cfg = Config{ .filesystem = .{ .allowRead = &empty, .denyRead = &empty, .allowWrite = &allowWrite, .denyWrite = &empty } };
+
+    const profile = try buildProfile(arena, .{ .rules = &.{} }, .{ .home = "/Users/acme", .cwd = "/Users/acme/widgets", .tmpdir = "/private/tmp" }, cfg);
+
+    var aw = std.Io.Writer.Allocating.init(arena);
+    try profile.write(&aw.writer);
+    const written = aw.written();
+
+    const allow = std.mem.indexOf(u8, written, "(allow file-write* (subpath \"/Users/acme/.config\"))").?;
+    const deny_global = std.mem.indexOf(u8, written, "(deny file-write* (subpath (string-append (param \"HOME\") \"/.config/zandy\")))").?;
+    const deny_local = std.mem.indexOf(u8, written, "(deny file-write* (literal (string-append (param \"CWD\") \"/.zandy.json\")))").?;
+    try std.testing.expect(allow < deny_global);
+    try std.testing.expect(allow < deny_local);
 }

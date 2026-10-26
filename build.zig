@@ -36,6 +36,17 @@ pub fn build(b: *std.Build) void {
     // by passing `--prefix` or `-p`.
     b.installArtifact(exe);
 
+    // The thin client that runs inside the sandbox and talks to the broker.
+    const client_exe = b.addExecutable(.{
+        .name = "zandy-client",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/client.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    b.installArtifact(client_exe);
+
     // This creates a top level step. Top level steps have a name and can be
     // invoked by name when running `zig build` (e.g. `zig build run`).
     // This will evaluate the `run` step rather than the default step.
@@ -64,26 +75,15 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run tests");
 
-    const test_sources = [_][]const u8{
-        "src/main.zig",
-        "src/sbpl.zig",
-        "src/profile.zig",
-        "src/preset.zig",
-        "src/cli.zig",
-        "src/launch.zig",
-        "src/env.zig",
-    };
-
-    for (test_sources) |src| {
-        const t = b.addTest(.{
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(src),
-                .target = target,
-                .optimize = optimize,
-            }),
-        });
-        test_step.dependOn(&b.addRunArtifact(t).step);
-    }
+    // src/tests.zig references every file with tests, so all of src/ is one module.
+    const tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/tests.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(tests).step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //

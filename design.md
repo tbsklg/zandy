@@ -5,55 +5,46 @@ A macOS sandbox launcher with builtin profiles for well-known apps, inspired by 
 ## API
 
 ```
-zandy <preset>                    # run with builtin profile
-zandy -p "wpath" <preset>         # run with builtin profile + additional promises
-zandy <preset> -- /explicit/path  # run with explicit binary path
+zandy <preset>   # run the preset's binary in its sandbox, with the broker
+zandy config     # print the effective config and the methods the agent sees
+zandy --help
 ```
 
-## Concepts
+## Presets
 
-### Presets
-
-A preset is the minimum correct set of sandbox permissions an app needs to function.
-Each preset is a `.zon` file under `src/profiles/` that is parsed at comptime via `@import`.
+A preset is the minimum correct set of sandbox permissions an app needs to function, plus what zandy passes to it: `binary`, `env` allowlist and startup `args`. Profiles are `.zon` files under `src/profiles/`, `@import`ed at comptime; `preset.find` looks a preset up by name.
 
 Presets are always required — there is no raw mode. Without a preset, the sandboxed process would crash or hang because the user can't know which mach lookups, IPC, or system operations an app requires.
 
-### Promises (`-p`)
+The binary is resolved with `/usr/bin/which` against `PATH`.
 
-Additive user-defined capabilities on top of a preset. Coarse-grained named groups (inspired by pledge):
+## Broker
 
-- `inet` — network access
-- `rpath` — read filesystem paths
-- `wpath` — write filesystem paths
-- `fwrite` — file write/create
+The sandboxed agent gets no credentials. When it needs an external tool (e.g. `glab`), it asks the broker over a Unix socket, and the broker runs the command outside the sandbox.
 
-These extend the preset, they never replace it.
-
-### Binary resolution
-
-1. Check for explicit path after `--`
-2. Otherwise search `PATH` environment variable ourselves (split on `:`, join with binary name, check executable exists)
-3. No dependency on `/usr/bin/which`
-
-## Preset lookup
-
-Comptime lookup table mapping preset name to profile:
-
-```zig
-const presets = .{
-    .{ .name = "opencode", .profile = @import("profiles/opencode.zon") },
-    .{ .name = "claude", .profile = @import("profiles/claude.zon") },
-};
-```
-
-At runtime, iterate and compare `.name` against the CLI argument.
-
-## Examples
+### Request flow
 
 ```
-zandy opencode                     # sandbox opencode with its builtin profile
-zandy claude                       # sandbox claude with its builtin profile
-zandy -p "wpath" opencode          # opencode preset + extra write access
-zandy opencode -- /usr/local/bin/opencode  # explicit binary path
+zandy-client call aws.cli '{"profile":"acme-dev","args":["s3","ls"]}'
+  → {"jsonrpc":"2.0","id":1,"method":"aws.cli","params":{"ticket":"…","args":{"profile":"acme-dev","args":["s3","ls"]}}}
+broker: ticket → find (policy) → parseParams → buildArgv → run
+  ← {"jsonrpc":"2.0","id":1,"result":"<stdout>"}   or   {"error":{"code":-32002,"message":"<stderr>"}}
 ```
+
+`rpc.discover` returns every callable method with its description and a JSON schema of its params.
+
+### Decisions
+
+- **Adapters group capabilities.** An adapter owns what its capabilities share: `binary`, `env`, and the name prefix. Each capability has `params` and an `argv` template. `parseAdapters` turns adapters into a flat `[]const Capability` at broker start.
+- **Parse, don't validate.** Config and requests are parsed into types the rest of the code relies on: `parseTemplate` turns `argv` into `Segment`s (`literal` or `param` index), `parseParams` turns `args` into `Args`. `buildArgv` only accepts those.
+- **No shell, whole entries.** Placeholders must be a whole argv entry (`"{project}"`). A `string` param becomes one entry and may not start with `-`, so it can't become a flag. A `list` param expands into one entry per item and allows flags. A `choice` param only accepts the values configured under `adapters.<adapter>.<param>`; without values the capability isn't offered.
+- **The outer process sets the scope.** The broker doesn't judge commands. `gitlab.cli` and `aws.cli` pass everything through; the token's scopes and the profile's IAM permissions decide. The broker keeps credentials outside and appends the chosen `--profile` last, so it wins.
+- **Honest effects.** Passthrough capabilities are `admin` and need `"policy": {"admin": "allow"}`.
+- **Backend credentials come from the broker.** `backend` is `anthropic` or `bedrock` (`profile`, `region`). For Bedrock the broker offers `backend.credentials` (`aws configure export-credentials`), and claude gets `--settings` with `awsCredentialExport` pointing at it. The agent can call it too, so the profile's account should only host Bedrock.
+- **The agent is told.** Each preset passes its own startup args; claude gets `--append-system-prompt` explaining `zandy-client`.
+- **Config is merged key by key.** Global `~/.config/zandy/config.json`, then `.zandy.json`; a top-level key in the project file wins.
+- **Only `allow`.** `discover` and calls only see capabilities whose effect the policy allows (`read` by default, configurable via `policy` in the config). `ask` behaves like `deny` until there is a prompt.
+- **Allowlisted environment.** zandy never edits its own environment. The sandboxed process gets a fresh `Environ.Map` with only the names its preset lists in `env`, plus `BROKER_SOCK`/`BROKER_TICKET`. There is no shared base list; each preset declares everything its process needs. Everything else, including adapter secrets, stays out. The adapter command gets only `PATH`, `HOME` and its adapter's `env`.
+- **Network is narrowed, not closed.** The profiles only allow TCP to `*:443`, the DNS socket, and `(param "BROKER_SOCK")`. TCP can't be restricted by hostname in SBPL, so keeping secrets out of the sandbox (env, files, keychain) is the actual protection.
+- **Config is comptime for now.** Adapters are `@import`ed `.zon` files. Later, adapters and profiles move to a separate repo that zandy downloads; templates are already parsed at runtime so the same code path works then.
+- **Thin client.** `zandy-client` passes JSON through and prints the result. The agent reads the `discover` JSON directly.

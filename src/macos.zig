@@ -11,3 +11,4 @@ pub extern "c" fn sandbox_init_with_parameters(
 
 /// /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/sandbox.h
 pub extern fn sandbox_free_error(errorbuf: [*c]u8) void;
+

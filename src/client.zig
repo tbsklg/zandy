@@ -15,30 +15,51 @@ pub fn main(init: std.process.Init) u8 {
     return 0;
 }
 
+const Command = union(enum) {
+    discover,
+    call: struct { method: []const u8, args: std.json.Value },
+};
+
+fn parseCommand(arena: std.mem.Allocator, argv: []const [:0]const u8) !Command {
+    if (argv.len < 2) return error.Usage;
+
+    if (std.mem.eql(u8, argv[1], "discover")) {
+        if (argv.len != 2) return error.Usage;
+        return .discover;
+    }
+
+    if (std.mem.eql(u8, argv[1], "call")) {
+        if (argv.len != 3 and argv.len != 4) return error.Usage;
+        const args = try parseArgsJson(arena, if (argv.len == 4) argv[3] else "{}");
+        return .{ .call = .{ .method = argv[2], .args = args } };
+    }
+
+    return error.Usage;
+}
+
 fn run(init: std.process.Init) !void {
     const arena = init.arena.allocator();
     const io = init.io;
 
-    const argv = try init.minimal.args.toSlice(arena);
-    if (argv.len < 2) return error.Usage;
-
+    const command = try parseCommand(arena, try init.minimal.args.toSlice(arena));
     const config = try readConfig(init.environ_map);
 
     var buf: [4096]u8 = undefined;
     var stdout = std.Io.File.stdout().writerStreaming(io, &buf);
     const out = &stdout.interface;
 
-    //TODO switch
-    if (std.mem.eql(u8, argv[1], "discover") and argv.len == 2) {
-        const result = try send(io, arena, config, "rpc.discover", null);
-        try checkVersion(result);
-        try out.print("{f}\n", .{std.json.fmt(result, .{})});
-    } else if (std.mem.eql(u8, argv[1], "call") and (argv.len == 3 or argv.len == 4)) {
-        const args = try parseArgsJson(arena, if (argv.len == 4) argv[3] else "{}");
-        const result = try send(io, arena, config, argv[2], args);
-        if (result != .string) return error.InvalidResponse;
-        try out.writeAll(result.string);
-    } else return error.Usage;
+    switch (command) {
+        .discover => {
+            const result = try send(io, arena, config, "rpc.discover", null);
+            try checkVersion(result);
+            try out.print("{f}\n", .{std.json.fmt(result, .{})});
+        },
+        .call => |c| {
+            const result = try send(io, arena, config, c.method, c.args);
+            if (result != .string) return error.InvalidResponse;
+            try out.writeAll(result.string);
+        },
+    }
 
     try out.flush();
 }
@@ -162,6 +183,47 @@ fn buildRequest(arena: std.mem.Allocator, method: []const u8, ticket: []const u8
     if (args) |a| try w.print(",\"args\":{f}", .{std.json.fmt(a, .{})});
     try w.writeAll("}}");
     return out.written();
+}
+
+test "parseCommand parses discover" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const argv = [_][:0]const u8{ "zandy-client", "discover" };
+
+    try std.testing.expectEqual(.discover, try parseCommand(arena_state.allocator(), &argv));
+}
+
+test "parseCommand parses call with args" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const argv = [_][:0]const u8{ "zandy-client", "call", "gitlab.cli", "{\"args\":[\"issue\",\"list\"]}" };
+    const command = try parseCommand(arena_state.allocator(), &argv);
+
+    try std.testing.expectEqualStrings("gitlab.cli", command.call.method);
+    try std.testing.expect(command.call.args.object.contains("args"));
+}
+
+test "parseCommand defaults call args to an empty object" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const argv = [_][:0]const u8{ "zandy-client", "call", "backend.credentials" };
+    const command = try parseCommand(arena_state.allocator(), &argv);
+
+    try std.testing.expectEqual(0, command.call.args.object.count());
+}
+
+test "parseCommand rejects unknown commands and wrong arity" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    try std.testing.expectError(error.Usage, parseCommand(arena, &.{"zandy-client"}));
+    try std.testing.expectError(error.Usage, parseCommand(arena, &.{ "zandy-client", "list" }));
+    try std.testing.expectError(error.Usage, parseCommand(arena, &.{ "zandy-client", "discover", "extra" }));
+    try std.testing.expectError(error.Usage, parseCommand(arena, &.{ "zandy-client", "call" }));
 }
 
 test "readConfig returns socket and ticket from env" {

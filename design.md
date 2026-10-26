@@ -46,15 +46,24 @@ broker: ticket → find (policy) → parseParams → buildArgv → run
 
 - **Adapters group capabilities.** An adapter owns what its capabilities share: `binary`, `env`, and the name prefix. Each capability has `params` and an `argv` template. `parseAdapters` turns adapters into a flat `[]const Capability` at broker start.
 - **Parse, don't validate.** Config and requests are parsed into types the rest of the code relies on: `parseTemplate` turns `argv` into `Segment`s (`literal` or `param` index), `parseParams` turns `args` into `Args`. `buildArgv` only accepts those.
-- **No shell, whole entries.** Placeholders must be a whole argv entry (`"{project}"`). A `string` param becomes one entry and may not start with `-`, so it can't become a flag. A `list` param expands into one entry per item and allows flags. A `choice` param only accepts the values configured under `adapters.<adapter>.<param>`; without values the capability isn't offered.
+- **No shell, whole entries.** Placeholders must be a whole argv entry (`"{project}"`). A `string` param becomes one entry and may not start with `-`, so it can't become a flag. A `list` param expands into one entry per item and allows flags. A `choice` param only accepts its configured values (e.g. `aws { profiles = [ … ]; }`); without values the capability isn't offered.
 - **The outer process sets the scope.** The broker doesn't judge commands. `gitlab.cli` and `aws.cli` pass everything through; the token's scopes and the profile's IAM permissions decide. The broker keeps credentials outside and appends the chosen `--profile` last, so it wins.
-- **Honest effects.** Passthrough capabilities are `admin` and need `"policy": {"admin": "allow"}`.
+- **Honest effects.** Passthrough capabilities are `admin` and need `policy.admin = "allow"`.
 - **Backend credentials come from the broker.** `backend` is `bedrock` (`profile`, `region`), required by the claude preset. `mkSandboxEnv` adds the `backend.credentials` adapter (`aws configure export-credentials`), and the claude preset's args get `--settings` with `awsCredentialExport` pointing at it. The agent can call it too, so the profile's account should only host Bedrock.
 - **The agent is told.** Each preset passes its own startup args; claude gets `--append-system-prompt` explaining `zandy-client`.
 - **No secrets in Nix.** `/nix/store` is world-readable. The manifest holds env names; values come from zandy's environment at launch.
 - **Adapters stay outside.** An adapter's package must not be in the sandbox closure: `mkSandboxEnv` asserts it for direct packages, `SandboxEnv.parse` checks every adapter binary against the whole closure.
-- **Only `allow`.** `discover` and calls only see capabilities whose effect the policy allows (`read` by default, configurable via `policy` in the config). `ask` behaves like `deny` until there is a prompt.
+- **Only `allow`.** `discover` and calls only see capabilities whose effect the policy allows (`read` by default, configurable via `policy` in `mkSandboxEnv`). `ask` behaves like `deny` until there is a prompt.
 - **Allowlisted environment.** zandy never edits its own environment. The sandboxed process gets a fresh `Environ.Map` with only the names its preset lists in `env`, plus `BROKER_SOCK`/`BROKER_TICKET`. There is no shared base list; each preset declares everything its process needs. Everything else, including adapter secrets, stays out. The adapter command gets only `PATH`, `HOME` and its adapter's `env`.
+- **Exec allowlist, with one exception.** Only the env's closure may be executed. The claude preset may also exec `/bin/sh` and `/bin/bash`: Claude Code runs `awsCredentialExport`, hooks and statusline commands with a hardcoded `/bin/sh`, which execs `/bin/bash`. `#!/usr/bin/env` shebangs fail; run scripts with their interpreter. Interpreters in the closure can still run arbitrary code, so the allowlist is defense in depth.
+- **Protected files.** The working directory is writable, except for files that define the sandbox or run outside it later: `flake.nix`, `flake.lock`, `.envrc`, `.git`, `.git/config`, `.git/hooks`. `profile.zig` appends these denies last and for `file-write*`, `file-write-create` and `file-write-data`, because SBPL lets a rule for a specific operation beat `file-write*` regardless of order. Neither a preset nor `filesystem.allowWrite` can lift them.
 - **Network is narrowed, not closed.** The profiles only allow TCP to `*:443`, the DNS socket, and `(param "BROKER_SOCK")`. TCP can't be restricted by hostname in SBPL, so keeping secrets out of the sandbox (env, files, keychain) is the actual protection.
 - **Config comes from the env.** Adapters, presets and policy are Nix; zandy has no config files and parses everything at runtime from `zandy.json`.
 - **Thin client.** `zandy-client` passes JSON through and prints the result. The agent reads the `discover` JSON directly.
+
+## Known issues
+
+- git aborts with `unable to access '~/.config/git/config': Operation not permitted`: the presets don't allow reading the global git config.
+- Keep `AWS_PROFILE` out of the `env` block of `~/.claude/settings.json`, otherwise claude tries to resolve it inside the sandbox.
+- `glab auth login` stores its token in `~/.config/glab-cli/config.yml`. The presets don't allow reading it; keep it that way, or the agent can bypass the broker.
+- `opencode` fails with `operation not permitted mkdir '/var/folders/…'`: start it once without zandy, then with zandy.

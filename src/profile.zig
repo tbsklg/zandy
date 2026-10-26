@@ -8,9 +8,29 @@ const Rule = sbpl.Rule;
 
 pub fn buildProfile(arena: std.mem.Allocator, base: sbpl.Profile, env: Env, fs: FileSystem, store_paths: []const store.StorePath) !sbpl.Profile {
     const fs_rules = try buildFilesystemRules(arena, env, fs);
-    const rules = try std.mem.concat(arena, sbpl.Rule, &.{ base.rules, try storeRules(arena, store_paths), fs_rules });
+    const rules = try std.mem.concat(arena, sbpl.Rule, &.{ base.rules, try storeRules(arena, store_paths), fs_rules, &protected_rules });
     return .{ .version = base.version, .deny_default = base.deny_default, .rules = rules };
 }
+
+const protected_literals = [_][]const u8{ "/flake.nix", "/flake.lock", "/.envrc", "/.git", "/.git/config" };
+const protected_subpaths = [_][]const u8{"/.git/hooks"};
+const protected_operations = [_]sbpl.Operation{ .file_write_all, .file_write_create, .file_write_data };
+
+const protected_rules = blk: {
+    var rules: [(protected_literals.len + protected_subpaths.len) * protected_operations.len]Rule = undefined;
+    var i = 0;
+    for (protected_operations) |op| {
+        for (protected_literals) |suffix| {
+            rules[i] = Rule.deny(op, .{ .literal = .{ .param_append = .{ .param = "CWD", .suffix = suffix } } });
+            i += 1;
+        }
+        for (protected_subpaths) |suffix| {
+            rules[i] = Rule.deny(op, .{ .subpath = .{ .param_append = .{ .param = "CWD", .suffix = suffix } } });
+            i += 1;
+        }
+    }
+    break :blk rules;
+};
 
 fn storeRules(arena: std.mem.Allocator, store_paths: []const store.StorePath) ![]Rule {
     const rules = try arena.alloc(Rule, store_paths.len * 2);
@@ -98,4 +118,24 @@ test "store paths may be executed and read, nothing else in the store" {
     try std.testing.expect(std.mem.indexOf(u8, written, "(allow file-read* (subpath \"/nix/store/lw5h7x6kxqdx6m8wnsqjjzj6fd1i9x2j-ripgrep-15.2.0\"))") != null);
     try std.testing.expect(std.mem.indexOf(u8, written, "(allow process-exec (subpath \"/nix/store/7f0sryhgq9arkgzmv2pfzyxn40p7j69f-pcre2-10.48\"))") != null);
     try std.testing.expect(std.mem.indexOf(u8, written, "(subpath \"/nix/store\")") == null);
+}
+
+test "files that define the sandbox or run outside it stay read-only even when the user allows writing CWD" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const allowWrite = [_][]const u8{"."};
+    const profile = try buildProfile(arena, .{ .rules = &.{} }, .{ .home = "/Users/acme", .cwd = "/Users/acme/widgets", .tmpdir = "/private/tmp" }, .{ .allowWrite = &allowWrite }, &.{});
+
+    var aw = std.Io.Writer.Allocating.init(arena);
+    try profile.write(&aw.writer);
+    const written = aw.written();
+
+    const allow = std.mem.indexOf(u8, written, "(allow file-write* (subpath \"/Users/acme/widgets/.\"))").?;
+    const deny_flake = std.mem.indexOf(u8, written, "(deny file-write* (literal (string-append (param \"CWD\") \"/flake.nix\")))").?;
+    const deny_hooks = std.mem.indexOf(u8, written, "(deny file-write* (subpath (string-append (param \"CWD\") \"/.git/hooks\")))").?;
+    try std.testing.expect(allow < deny_flake);
+    try std.testing.expect(allow < deny_hooks);
+    try std.testing.expect(std.mem.indexOf(u8, written, "(deny file-write-create (subpath (string-append (param \"CWD\") \"/.git/hooks\")))") != null);
 }

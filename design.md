@@ -7,6 +7,7 @@ A macOS sandbox launcher with builtin profiles for well-known apps, built around
 ```
 zandy --env <drv> [args...]   # run the env's preset in its sandbox, with the broker
 zandy config --env <drv>      # print the manifest and the methods the agent sees
+zandy --env <drv> --zandy-config  # the same, as zandy-<name> --zandy-config from the launcher
 zandy --help
 ```
 

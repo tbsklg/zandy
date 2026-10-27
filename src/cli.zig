@@ -19,6 +19,7 @@ pub fn parseArgs(args: []const [:0]const u8) !Command {
     }
     if (!std.mem.eql(u8, args[1], "--env")) return error.NoEnv;
     if (args.len < 3) return error.NoEnv;
+    if (args.len == 4 and std.mem.eql(u8, args[3], "--zandy-config")) return .{ .config = args[2] };
 
     return .{ .launch = .{ .env = args[2], .args = args[3..] } };
 }
@@ -26,6 +27,7 @@ pub fn parseArgs(args: []const [:0]const u8) !Command {
 pub const usage =
     \\usage: zandy --env <drv> [args...]
     \\       zandy config --env <drv>    show the manifest and the methods the agent sees
+    \\       zandy-<name> --zandy-config the same, from the launcher
     \\
     \\  <drv>  sandbox env built by zandy.lib.mkSandboxEnv, e.g. ./result
     \\         usually started with its launcher zandy-<name> or `nix run`
@@ -56,6 +58,12 @@ test "returns env and passes args through" {
 
 test "returns config command with its env" {
     const args = [_][:0]const u8{ "zandy", "config", "--env", "./result" };
+
+    try std.testing.expectEqualStrings("./result", (try parseArgs(&args)).config);
+}
+
+test "returns config command for --zandy-config from the launcher" {
+    const args = [_][:0]const u8{ "zandy", "--env", "./result", "--zandy-config" };
 
     try std.testing.expectEqualStrings("./result", (try parseArgs(&args)).config);
 }

@@ -64,6 +64,7 @@ nix profile add ~/.config/zandy   # older Nix: nix profile install
 
 cd ~/code/widgets
 zandy-claude                      # claude, sandboxed, in this directory
+zandy-claude --zandy-config       # the manifest and the broker methods, without starting claude
 ```
 
 After changing `flake.nix`: `git add -A && nix flake update zandy && nix profile upgrade --all`.

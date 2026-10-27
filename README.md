@@ -105,6 +105,53 @@ zandy.lib.mkSandboxEnv {
 
 Unknown or mistyped options fail at build time. Full reference with types and defaults: [docs/options.md](docs/options.md), generated with `nix build .#options-doc`.
 
+## Write your own adapter
+
+An adapter is a function from `pkgs` to an attrset; `zandy.adapters.gitlab` is one ([nix/adapters/gitlab.nix](nix/adapters/gitlab.nix)). Define your own in your flake and add it to `adapters`. This one runs macOS text-to-speech, which the sandbox can't reach:
+
+```nix
+let
+  say = pkgs: {
+    name = "mac";
+    package = pkgs.writeShellScriptBin "say" ''exec /usr/bin/say -v "$1" "$2"'';
+    binary = "say";
+    capabilities = [
+      {
+        name = "say";
+        description = "Speak a text out loud on the user's Mac.";
+        params = [
+          { name = "voice"; kind = "choice"; choices = [ "Bad News" "Good News" "Cellos" "Zarvox" ]; description = "Voice to speak with"; }
+          { name = "text"; description = "Text to speak"; }
+        ];
+        argv = [ "{voice}" "{text}" ];
+      }
+    ];
+  };
+in
+zandy.lib.mkSandboxEnv {
+  # …
+  adapters = [ say ];
+}
+```
+
+The agent then calls `zandy-client call mac.say '{"voice":"Bad News","text":"the tests failed"}'`. `say` is not a Nix package, so a one-line wrapper calls `/usr/bin/say`; it runs in the broker, where `/usr/bin` is reachable. A real adapter adds the env vars that hold its secrets, e.g. `env = [ "GITLAB_TOKEN" ];`.
+
+| Field | Meaning |
+|---|---|
+| `name` | Prefix of the method names: `<name>.<capability>` |
+| `package` | Derivation the broker runs; must not be in `packages` or the preset's packages |
+| `binary` | Program in `package/bin` |
+| `env` | Env vars passed from the shell that started zandy, besides `PATH` and `HOME` |
+| `capabilities` | The methods: `name`, `description`, `params`, `argv` |
+
+How the broker runs a method:
+
+- **argv.** Each element is a literal or a whole `{param}`; `"--repo={param}"` is not substituted. A `list` param expands to several arguments.
+- **Params.** All are required. `string` and `choice` values may not start with `-`, so they can't become options. A `choice` with an empty `choices` list drops the method. `list` values pass through unchecked.
+- **Process.** The command runs outside the sandbox, in the directory zandy started in. Exit 0 returns stdout to the agent; anything else returns stderr.
+
+Whatever the command can do, the agent can do. Prefer narrow methods with `string` and `choice` params over a `list` that passes arguments through: `git` with free arguments runs any command, e.g. via `-c core.sshCommand=…`. Avoid tools that read the project directory, like `git` or `make`: the agent can write there, and the command runs what the project configures, outside the sandbox.
+
 ## What the agent can do
 
 - Read and write the working directory, except `flake.nix`, `flake.lock`, `.envrc`, `.git/config` and `.git/hooks`.

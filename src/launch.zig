@@ -56,7 +56,7 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     try sandbox_environ.put("BROKER_TICKET", &ticket);
     const envp = try sandbox_environ.createPosixBlock(arena, .{});
 
-    const ctx: rpc.Context = .{ .ticket = &ticket, .registry = .{ .capabilities = try registry.parseAdapters(arena, manifest.adapters) }, .policy = manifest.policy, .environ = environ };
+    const ctx: rpc.Context = .{ .ticket = &ticket, .registry = .{ .capabilities = try registry.parseAdapters(arena, manifest.adapters) }, .environ = environ };
 
     const pid = std.c.fork();
     if (pid == -1) return error.ForkFailed;

@@ -1,15 +1,45 @@
 # zandy
 
-A macOS sandbox for coding agents (Claude Code, opencode). The agent works in the current directory but can't read the rest of `$HOME`, can only run programs you declared in Nix, and never sees your credentials. Tools that need credentials (`glab`, `aws`) run outside the sandbox through a broker.
+A declarative macOS sandbox for coding agents, built with Nix.
 
-## Nix meets zandy
+Coding agents like Claude Code and opencode run with your user's permissions: read access to all of `$HOME`, every program on the system and every credential. zandy restricts the process to what you declare in a flake:
 
-Nix builds the sandbox, zandy enforces it.
+- **Files:** the project directory, not the rest of `$HOME`.
+- **Programs:** only those in the env; nothing from Homebrew or `/usr/bin`.
+- **Credentials:** none. Tools that need them, like `glab` and `aws`, run outside the sandbox through a broker.
 
-- **Nix** builds one env per sandbox from your `flake.nix`: the programs the agent may run, the adapters the broker offers, the policy.
-- **zandy** reads that env, allows exactly those store paths to execute, sandboxes the agent and runs the broker.
+## Vision
 
-So zandy only runs with Nix. Install it and enable flakes:
+zandy is a proof of concept. The goal is a self-contained, declarative sandbox that follows functional patterns:
+
+- **A pure function of its declaration.** One flake describes everything an agent gets: tools, filesystem, network, credentials and the model backend. The same flake always yields the same sandbox; nothing outside it, no global config or state in `$HOME`, changes the result.
+- **Immutable.** The built sandbox is a read-only value in `/nix/store`. Changing it means changing the declaration and building a new one, not mutating the old one.
+- **Side effects at the edge.** The sandbox holds no credentials. Effects that need them happen outside, in the broker, through explicit requests.
+- **Parse, don't validate.** Every input is parsed into a precise type, once, at the boundary: the flake by the Nix options, the manifest and requests by zandy.
+
+Next steps are in [TODO.md](TODO.md).
+
+## Nix in 30 seconds
+
+Nix is a package manager that builds every package into its own read-only directory under `/nix/store`, named by a hash of everything that went into it (`/nix/store/…-ripgrep-14.1.1`). A package's *closure* is that directory plus every store path it depends on. A `flake.nix` describes what to build and pins all inputs in `flake.lock`, so the same flake builds the same result on any machine.
+
+## Why Nix
+
+- **An exact list of what may run.** The closure is every file the agent's tools need. zandy allows exactly those store paths to execute, instead of allowing all of `/usr/bin` or Homebrew.
+- **Tools the agent can't change.** `/nix/store` is read-only, so the agent can't modify or replace the programs it runs.
+- **Per-project toolchains.** A project's JDK or Node version lives in its env, not installed globally.
+- **Typed configuration.** Your sandbox is a Nix expression, checked at build time. zandy has no config files of its own.
+- **Reproducible.** Pinned inputs mean the same sandbox for everyone on the team.
+
+## How it fits together
+
+![overview](docs/overview.png)
+
+- **Nix describes the sandbox:** which tools live inside, which stay outside behind the broker. The result holds no secrets.
+- **zandy** (Zig) turns that into a Seatbelt profile, starts the agent and runs the broker, which brings in credentials outside the sandbox.
+- **Seatbelt**, the macOS kernel sandbox, enforces the profile.
+
+Install Nix and enable flakes:
 
 ```sh
 sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install)
@@ -20,19 +50,32 @@ Check with `nix flake --help`. zandy needs nothing else besides macOS; Zig, clau
 
 ## Quickstart
 
+You need:
+
+- An AWS profile with Bedrock access in `~/.aws/config`, logged in (e.g. `aws sso login --profile acme-bedrock`). The claude preset runs Claude Code through Bedrock.
+- The env vars of the adapters you keep, exported in the shell that starts zandy, e.g. `GITLAB_TOKEN` for `zandy.adapters.gitlab`.
+
 ```sh
 mkdir -p ~/.config/zandy && cd ~/.config/zandy
 nix flake init -t git+https://codeberg.org/tbsklg/zandy
-$EDITOR flake.nix                 # set backend.bedrock and adapters
+$EDITOR flake.nix                 # replace the acme-* profiles, drop adapters you don't need
+git init && git add -A            # flakes only see files git tracks
 nix profile add ~/.config/zandy   # older Nix: nix profile install
 
 cd ~/code/widgets
 zandy-claude                      # claude, sandboxed, in this directory
 ```
 
-After changing `flake.nix`: `nix flake update zandy && nix profile upgrade --all`.
+After changing `flake.nix`: `git add -A && nix flake update zandy && nix profile upgrade --all`.
 
-For a project's own toolchain, put the same env in the project's `flake.nix`, add the tools to `packages` and start it with `nix run`.
+### Per project
+
+For a project's own toolchain, give it its own env and add the tools to `packages`. Keep the flake in its own directory outside the project, so it needn't be committed and the agent can't edit it, and start it from the project root:
+
+```sh
+cd ~/code/widgets
+nix run ~/.config/zandy/widgets
+```
 
 ## Configuration
 
@@ -47,10 +90,20 @@ zandy.lib.mkSandboxEnv {
     zandy.adapters.gitlab                           # gitlab.cli, uses GITLAB_TOKEN
     (zandy.adapters.aws { profiles = [ "acme-dev" ]; })
   ];
-  policy.admin = "allow";                           # default: only read methods
   filesystem.allowRead = [ "~/notes" ];
 }
 ```
+
+| Option | What it sets |
+|---|---|
+| `name` | The env's name; the launcher becomes `zandy-<name>` |
+| `preset` | The app to run and the sandbox rules it needs |
+| `packages` | Extra programs on the agent's `PATH` |
+| `backend.bedrock` | AWS profile and region for Bedrock; the broker exports the credentials |
+| `adapters` | Tools the broker runs outside the sandbox; listing one makes it callable |
+| `filesystem` | Extra paths to allow or deny for reading and writing |
+
+Unknown or mistyped options fail at build time. Full reference with types and defaults: [docs/options.md](docs/options.md), generated with `nix build .#options-doc`.
 
 ## What the agent can do
 
@@ -63,6 +116,8 @@ zandy.lib.mkSandboxEnv {
   zandy-client discover
   zandy-client call gitlab.cli '{"args":["issue","list","--repo","group/name"]}'
   ```
+
+  Adapters pass commands through; the token's scopes and the profile's IAM permissions decide what they may do.
 
 Details and design decisions: [design.md](design.md).
 

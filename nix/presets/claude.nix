@@ -14,7 +14,7 @@ in
   env = [ "HOME" "TMPDIR" "USER" "TERM" "COLORTERM" "LANG" "LC_ALL" ];
 
   settings = backend:
-    if backend ? bedrock then {
+    if backend.bedrock != null then {
       awsCredentialExport = "zandy-client call backend.credentials";
       env = {
         CLAUDE_CODE_USE_BEDROCK = "1";

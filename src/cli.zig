@@ -28,7 +28,7 @@ pub const usage =
     \\       zandy config --env <drv>    show the manifest and the methods the agent sees
     \\
     \\  <drv>  sandbox env built by zandy.lib.mkSandboxEnv, e.g. ./result
-    \\         usually started with `nix run .#sandbox`
+    \\         usually started with its launcher zandy-<name> or `nix run`
     \\
 ;
 

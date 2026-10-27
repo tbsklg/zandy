@@ -8,7 +8,6 @@ pub const ticket_len = 64;
 pub const Context = struct {
     ticket: *const [ticket_len]u8,
     registry: registry_mod.Registry,
-    policy: registry_mod.Policy = .{},
     environ: ?*const std.process.Environ.Map = null,
 };
 
@@ -37,9 +36,9 @@ fn dispatch(arena: std.mem.Allocator, io: std.Io, ctx: *const Context, obj: std.
     if (method != .string) return error.MethodNotFound;
 
     if (std.mem.eql(u8, method.string, "rpc.discover"))
-        return .{ .success = try ctx.registry.discover(arena, ctx.policy) };
+        return .{ .success = try ctx.registry.discover(arena) };
 
-    const cap = ctx.registry.find(method.string, ctx.policy) orelse return error.MethodNotFound;
+    const cap = ctx.registry.find(method.string) orelse return error.MethodNotFound;
 
     const given = obj.get("params").?.object.get("args") orelse std.json.Value{ .object = .{} };
     if (given != .object) return error.InvalidParams;
@@ -228,7 +227,7 @@ test "rpc.discover lists the capabilities of the registry" {
     defer arena_state.deinit();
 
     const ctx: Context = .{ .ticket = test_ticket, .registry = .{ .capabilities = &.{
-        .{ .name = "issues.list", .effect = .read, .binary = "glab" },
+        .{ .name = "issues.list", .binary = "glab" },
     } } };
     const response = try handle(
         arena_state.allocator(),
@@ -238,19 +237,17 @@ test "rpc.discover lists the capabilities of the registry" {
     );
 
     try std.testing.expectEqualStrings(
-        \\{"jsonrpc":"2.0","id":1,"result":{"version":"1","methods":[{"name":"issues.list","description":"","effect":"read","params":{"type":"object","properties":{},"required":[]}}]}}
+        \\{"jsonrpc":"2.0","id":1,"result":{"version":"1","methods":[{"name":"issues.list","description":"","params":{"type":"object","properties":{},"required":[]}}]}}
     , response.?);
 }
 
 const echo_ctx: Context = .{ .ticket = test_ticket, .registry = .{ .capabilities = &.{
     .{
         .name = "acme.echo",
-        .effect = .read,
         .binary = "/bin/echo",
         .params = &.{.{ .name = "project" }},
         .argv = &.{.{ .param = 0 }},
     },
-    .{ .name = "acme.close", .effect = .write, .binary = "/bin/echo" },
 } } };
 
 test "calling a capability returns the command's stdout" {
@@ -282,21 +279,5 @@ test "calling a capability with invalid params returns invalid params" {
 
     try std.testing.expectEqualStrings(
         \\{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Invalid params"}}
-    , response.?);
-}
-
-test "calling a capability that is not allowed returns method not found" {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-
-    const response = try handle(
-        arena_state.allocator(),
-        std.testing.io,
-        &echo_ctx,
-        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"acme.close\"," ++ valid_params ++ "}",
-    );
-
-    try std.testing.expectEqualStrings(
-        \\{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}
     , response.?);
 }

@@ -47,7 +47,7 @@ pub fn main(init: std.process.Init) !void {
 fn showConfig(arena: std.mem.Allocator, io: std.Io, sandbox_env: SandboxEnv) !void {
     const manifest = sandbox_env.manifest;
     const registry: registry_mod.Registry = .{ .capabilities = try registry_mod.parseAdapters(arena, manifest.adapters) };
-    const discovered = try std.json.parseFromSliceLeaky(std.json.Value, arena, try registry.discover(arena, manifest.policy), .{});
+    const discovered = try std.json.parseFromSliceLeaky(std.json.Value, arena, try registry.discover(arena), .{});
 
     var buf: [4096]u8 = undefined;
     var stdout = std.Io.File.stdout().writerStreaming(io, &buf);

@@ -22,8 +22,6 @@
             zandy.adapters.gitlab
             (zandy.adapters.aws { profiles = [ "acme-dev" ]; })
           ];
-          policy = { };
-          filesystem = { };
         };
       });
     };

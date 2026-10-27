@@ -20,7 +20,6 @@ pub const FileSystem = struct {
 pub const Manifest = struct {
     preset: Preset,
     adapters: []const registry.Adapter = &.{},
-    policy: registry.Policy = .{},
     filesystem: FileSystem = .{},
 };
 
@@ -28,7 +27,7 @@ pub fn parse(arena: std.mem.Allocator, bytes: []const u8) !Manifest {
     return std.json.parseFromSliceLeaky(Manifest, arena, bytes, .{ .allocate = .alloc_always });
 }
 
-test "parses a manifest and defaults policy and filesystem" {
+test "parses a manifest and defaults filesystem" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
@@ -39,7 +38,7 @@ test "parses a manifest and defaults policy and filesystem" {
         \\    {"action":"allow","operation":"process_fork"}
         \\  ]}},
         \\ "adapters":[{"name":"gitlab","binary":"/nix/store/lw5h7x6kxqdx6m8wnsqjjzj6fd1i9x2j-glab-1.0/bin/glab","env":["GITLAB_TOKEN"],
-        \\   "capabilities":[{"name":"cli","description":"Run glab","effect":"admin","params":[{"name":"args","kind":"list"}],"argv":["{args}"]}]}]}
+        \\   "capabilities":[{"name":"cli","description":"Run glab","params":[{"name":"args","kind":"list"}],"argv":["{args}"]}]}]}
     );
 
     try std.testing.expectEqualStrings("claude", manifest.preset.binary);
@@ -47,7 +46,6 @@ test "parses a manifest and defaults policy and filesystem" {
     try std.testing.expectEqualStrings("/.claude", manifest.preset.profile.rules[0].filter.?.subpath.param_append.suffix);
     try std.testing.expectEqual(null, manifest.preset.profile.rules[1].filter);
     try std.testing.expectEqualStrings("gitlab", manifest.adapters[0].name);
-    try std.testing.expectEqual(.deny, manifest.policy.admin);
     try std.testing.expectEqual(0, manifest.filesystem.allowWrite.len);
 }
 

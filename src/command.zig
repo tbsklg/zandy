@@ -214,7 +214,6 @@ test "run returns stdout when the command succeeds" {
 
     const cap: registry.Capability = .{
         .name = "echo",
-        .effect = .read,
         .binary = "/bin/echo",
         .argv = &.{.{ .param = 0 }},
     };
@@ -229,7 +228,6 @@ test "run returns stderr when the command fails" {
 
     const cap: registry.Capability = .{
         .name = "ls",
-        .effect = .read,
         .binary = "/bin/ls",
         .argv = &.{.{ .literal = "/nonexistent-zandy" }},
     };

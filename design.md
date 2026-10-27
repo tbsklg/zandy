@@ -37,7 +37,7 @@ The sandboxed agent gets no credentials. When it needs an external tool (e.g. `g
 ```
 zandy-client call aws.cli '{"profile":"acme-dev","args":["s3","ls"]}'
   → {"jsonrpc":"2.0","id":1,"method":"aws.cli","params":{"ticket":"…","args":{"profile":"acme-dev","args":["s3","ls"]}}}
-broker: ticket → find (policy) → parseParams → buildArgv → run
+broker: ticket → find → parseParams → buildArgv → run
   ← {"jsonrpc":"2.0","id":1,"result":"<stdout>"}   or   {"error":{"code":-32002,"message":"<stderr>"}}
 ```
 
@@ -49,11 +49,10 @@ broker: ticket → find (policy) → parseParams → buildArgv → run
 - **Parse, don't validate.** Config and requests are parsed into precise types; `buildArgv` only accepts those.
 - **No shell.** Each placeholder is a whole argv entry. `string` params can't start with `-`, `list` params can, `choice` params only take configured values.
 - **The outer process sets the scope.** The broker doesn't judge commands; token scopes and IAM permissions do.
-- **Only `allow`.** The agent only sees capabilities whose effect the policy allows (`read` by default). Passthrough capabilities are `admin`.
 - **Backend credentials come from the broker.** The claude preset fetches its Bedrock credentials through the `backend.credentials` adapter.
 - **No secrets in the sandbox.** The manifest holds env names, values come from zandy's environment. The sandbox gets only its preset's `env` plus `BROKER_SOCK`/`BROKER_TICKET`; adapter binaries stay outside its closure.
 - **Exec allowlist.** Only the env's closure may be executed, plus `/bin/sh` and `/bin/bash` for claude.
-- **Protected files.** The working directory is writable, except `flake.nix`, `flake.lock`, `.envrc` and `.git`.
+- **Protected files.** The working directory is writable, except `flake.nix`, `flake.lock`, `.envrc`, `.git/config` and `.git/hooks`.
 - **Network is narrowed.** Only TCP to `*:443`, DNS and the broker socket.
 
 ## Known issues

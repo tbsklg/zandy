@@ -26,7 +26,7 @@
 
       templates.default = {
         path = ./templates/default;
-        description = "A zandy sandbox env: run with `nix run`, install with `nix profile install`";
+        description = "A zandy sandbox env: run with `nix run`, install with `nix profile add`";
       };
     }
     // flake-utils.lib.eachDefaultSystem (system:
@@ -41,6 +41,10 @@
       {
         packages = {
           inherit zandy zandy-client;
+          options-doc = (pkgs.nixosOptionsDoc {
+            options = builtins.removeAttrs (pkgs.lib.evalModules { modules = [ ./nix/options.nix ]; }).options [ "_module" ];
+            transformOptions = opt: opt // { declarations = [ ]; };
+          }).optionsCommonMark;
           default = lib.mkSandboxEnv {
             inherit pkgs;
             name = "demo";

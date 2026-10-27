@@ -22,7 +22,7 @@ The profile is **deny-default**: the working directory is read+write, the env's 
 
 | Scenario | Expected |
 |---|---|
-| `zandy-client discover` | Lists the methods allowed by the env's policy |
+| `zandy-client discover` | Lists the methods of the env's adapters |
 | `zandy-client call aws.cli '{"profile":"<configured>","args":["--version"]}'` | aws version |
 | Same with a profile that isn't configured | `Invalid params`, exit code 4 |
 | `zandy-client call backend.credentials` | JSON credentials (Bedrock env only) |

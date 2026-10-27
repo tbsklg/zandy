@@ -2,7 +2,7 @@
 let
   zandy = pkgs.stdenvNoCC.mkDerivation {
     pname = "zandy";
-    version = "0.0.7";
+    version = "0.0.8";
     src = pkgs.lib.fileset.toSource {
       root = ../.;
       fileset = pkgs.lib.fileset.unions [ ../build.zig ../build.zig.zon ../src ];

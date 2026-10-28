@@ -40,7 +40,7 @@
           inherit system;
           config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [ "claude-code" ];
         };
-        inherit (lib.zandyFor pkgs) zig zandy zandy-client;
+        inherit (lib.zandyFor pkgs) zig zandy zandy-client tests;
       in
       {
         packages = {
@@ -61,6 +61,8 @@
             ];
           };
         };
+
+        checks = { inherit tests; };
 
         devShells.default = pkgs.mkShell {
           packages = [ zig ];

@@ -10,11 +10,16 @@ let
       fileset = pkgs.lib.fileset.unions [ ../build.zig ../build.zig.zon ../src ];
     };
     nativeBuildInputs = [ zig.hook pkgs.removeReferencesTo ];
-    doCheck = true;
     postFixup = ''
       remove-references-to -t ${zig} $out/bin/*
     '';
     disallowedReferences = [ zig ];
+  };
+
+  tests = zandy.overrideAttrs {
+    pname = "zandy-tests";
+    doCheck = true;
+    __darwinAllowLocalNetworking = true;
   };
 
   zandy-client = pkgs.runCommand "zandy-client" { } ''
@@ -23,5 +28,5 @@ let
   '';
 in
 {
-  inherit zig zandy zandy-client;
+  inherit zig zandy zandy-client tests;
 }

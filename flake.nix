@@ -24,6 +24,12 @@
         aws = import ./nix/adapters/aws.nix;
       };
 
+      gateways = {
+        bedrock = import ./nix/gateways/bedrock.nix;
+        anthropic = import ./nix/gateways/anthropic.nix;
+        openai = import ./nix/gateways/openai.nix;
+      };
+
       templates.default = {
         path = ./templates/default;
         description = "A zandy sandbox env: run with `nix run`, install with `nix profile add`";
@@ -50,7 +56,7 @@
             name = "demo";
             preset = import ./nix/presets/claude.nix;
             packages = [ pkgs.ripgrep ];
-            backend.bedrock = { profile = "acme-bedrock"; region = "eu-west-1"; };
+            gateways = [ (import ./nix/gateways/bedrock.nix { profile = "acme-bedrock"; region = "eu-west-1"; }) ];
             adapters = [
               (import ./nix/adapters/gitlab.nix)
               (import ./nix/adapters/aws.nix { profiles = [ "acme-dev" ]; })

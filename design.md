@@ -50,7 +50,7 @@ broker: ticket → find → parseParams → buildArgv → run
 - **Parse, don't validate.** Config and requests are parsed into precise types; `buildArgv` only accepts those.
 - **No shell.** Each placeholder is a whole argv entry. `string` params can't start with `-`, `list` params can, `choice` params only take configured values.
 - **The outer process sets the scope.** The broker doesn't judge commands; token scopes and IAM permissions do.
-- **Backend credentials come from the broker.** The claude preset fetches its Bedrock credentials through the `backend.credentials` adapter.
+- **The model backend goes through a gateway.** The broker forwards the agent's HTTP requests to one fixed upstream and adds the auth: a header from zandy's environment, or a local proxy such as `aws-sigv4-proxy` that signs for Bedrock. The sandbox reaches only the gateway's port and never sees the credentials; what they allow is decided by their scope, as for adapters.
 - **No secrets in the sandbox.** The manifest holds env names, values come from zandy's environment. The sandbox gets only its preset's `env` plus `BROKER_SOCK`/`BROKER_TICKET`; adapter binaries stay outside its closure.
 - **Exec allowlist.** Only the env's closure may be executed, plus `/bin/sh` and `/bin/bash` for claude.
 - **Protected files.** The working directory is writable, except `flake.nix`, `flake.lock`, `.envrc`, `.git/config` and `.git/hooks`.

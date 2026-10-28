@@ -4,6 +4,7 @@ const sbpl = @import("sbpl.zig");
 const broker = @import("broker.zig");
 const rpc = @import("rpc.zig");
 const registry = @import("registry.zig");
+const gateway = @import("gateway.zig");
 
 const Env = @import("env.zig");
 const SandboxEnv = @import("sandbox_env.zig");
@@ -16,7 +17,21 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     const preset = manifest.preset;
     const bin_dir = sandbox_env.bin;
 
-    const profile_z = try serialize(arena, profile);
+    var client: std.http.Client = .{ .allocator = init.gpa, .io = io };
+    const gateways = try arena.alloc(gateway.Running, manifest.gateways.len);
+    const gateway_rules = try arena.alloc(sbpl.Rule, gateways.len);
+    for (manifest.gateways, gateways, gateway_rules) |config, *running, *rule| {
+        running.* = gateway.start(arena, io, &client, config, environ) catch |err| {
+            std.debug.print("zandy: gateway '{s}' could not start: {t}\n", .{ config.name, err });
+            return err;
+        };
+        errdefer running.stop(io);
+        rule.* = sbpl.Rule.allow(.network_outbound, .{ .remote_tcp = try std.fmt.allocPrint(arena, "localhost:{d}", .{gateway.port(&running.server)}) });
+    }
+
+    defer for (gateways) |*running| running.stop(io);
+
+    const profile_z = try serialize(arena, .{ .version = profile.version, .deny_default = profile.deny_default, .rules = try std.mem.concat(arena, sbpl.Rule, &.{ profile.rules, gateway_rules }) });
     const path = try std.fs.path.joinZ(arena, &.{ bin_dir, preset.binary });
 
     const extra_args = try std.mem.concat(arena, [:0]const u8, &.{ preset.args, user_args });
@@ -54,6 +69,7 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     try sandbox_environ.put("SHELL", try std.fs.path.join(arena, &.{ bin_dir, "bash" }));
     try sandbox_environ.put("BROKER_SOCK", sock_path);
     try sandbox_environ.put("BROKER_TICKET", &ticket);
+    for (try gateway.environFor(arena, preset.gatewayEnv, gateways)) |entry| try sandbox_environ.put(entry.name, entry.value);
     const envp = try sandbox_environ.createPosixBlock(arena, .{});
 
     const ctx: rpc.Context = .{ .ticket = &ticket, .registry = .{ .capabilities = try registry.parseAdapters(arena, manifest.adapters) }, .environ = environ };
@@ -83,6 +99,11 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
 
     const thread = try std.Thread.spawn(.{}, broker.serveLoop, .{ io, init.gpa, &server, &ctx });
     thread.detach();
+
+    for (gateways) |*running| {
+        const gateway_thread = try std.Thread.spawn(.{}, gateway.serveLoop, .{ io, init.gpa, &running.server, &running.upstream });
+        gateway_thread.detach();
+    }
 
     _ = std.c.waitpid(pid, null, 0);
 

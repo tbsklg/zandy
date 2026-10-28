@@ -4,7 +4,6 @@ let
     Run `zandy-client discover` to list the available broker methods, then call one with
     `zandy-client call <method> '<json args>'`, e.g.
     `zandy-client call aws.cli '{"profile":"<profile>","args":["s3","ls"]}'`.
-    `backend.credentials` is for Claude Code itself; don't use it.
   '';
 in
 {
@@ -13,16 +12,21 @@ in
   packages = pkgs: [ pkgs.claude-code pkgs.bash pkgs.coreutils pkgs.git ];
   env = [ "HOME" "TMPDIR" "USER" "TERM" "COLORTERM" "LANG" "LC_ALL" ];
 
-  settings = backend:
-    if backend.bedrock != null then {
-      awsCredentialExport = "zandy-client call backend.credentials";
-      env = {
-        CLAUDE_CODE_USE_BEDROCK = "1";
-        AWS_REGION = backend.bedrock.region;
-      };
-    } else throw "zandy: the claude preset needs backend.bedrock = { profile = \"…\"; region = \"…\"; }";
+  gatewayEnv = {
+    anthropic = {
+      ANTHROPIC_BASE_URL = "{url}";
+      # Claude Code needs a token to skip its login; the gateway replaces it with the real key.
+      ANTHROPIC_AUTH_TOKEN = "zandy-gateway";
+    };
+    bedrock = gateway: {
+      CLAUDE_CODE_USE_BEDROCK = "1";
+      CLAUDE_CODE_SKIP_BEDROCK_AUTH = "1";
+      ANTHROPIC_BEDROCK_BASE_URL = "{url}";
+      AWS_REGION = gateway.region;
+    };
+  };
 
-  args = { settings }: [ "--append-system-prompt" prompt "--settings" (builtins.toJSON settings) ];
+  args = [ "--append-system-prompt" prompt ];
 
   rules = [
     { action = "allow"; operation = "process_exec"; filter = { literal = { literal = "/bin/sh"; }; }; }

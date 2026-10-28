@@ -14,11 +14,15 @@ pub fn parse(arena: std.mem.Allocator, root: store.StorePath, store_paths: []con
     const manifest = try manifest_mod.parse(arena, manifest_json);
 
     for (manifest.adapters) |adapter| {
-        const adapter_path = try store.owner(adapter.binary);
-        for (closure) |p| {
-            if (std.mem.eql(u8, p.path, adapter_path.path)) return error.AdapterInSandbox;
-        }
+        if (try inClosure(closure, adapter.binary)) return error.AdapterInSandbox;
     }
+    for (manifest.gateways) |gateway| switch (gateway.auth) {
+        .header => {},
+        .proxy => |proxy| {
+            if (proxy.argv.len == 0) return error.EmptyProxyArgv;
+            if (try inClosure(closure, proxy.argv[0])) return error.GatewayInSandbox;
+        },
+    };
 
     return .{
         .root = root,
@@ -26,6 +30,14 @@ pub fn parse(arena: std.mem.Allocator, root: store.StorePath, store_paths: []con
         .closure = closure,
         .manifest = manifest,
     };
+}
+
+fn inClosure(closure: []const store.StorePath, binary: []const u8) !bool {
+    const binary_path = try store.owner(binary);
+    for (closure) |p| {
+        if (std.mem.eql(u8, p.path, binary_path.path)) return true;
+    }
+    return false;
 }
 
 pub fn load(arena: std.mem.Allocator, io: std.Io, path: []const u8) !SandboxEnv {
@@ -75,4 +87,43 @@ test "rejects an adapter binary outside the store" {
     defer arena_state.deinit();
 
     try std.testing.expectError(error.InvalidStorePath, parse(arena_state.allocator(), try store.parse(test_root), test_paths, testManifest("/opt/homebrew/bin/glab")));
+}
+
+fn gatewayManifest(comptime argv: []const u8) []const u8 {
+    return
+    \\{"preset":{"name":"claude","binary":"claude","profile":{}},
+    \\ "gateways":[{"name":"bedrock","upstream":"https://bedrock-runtime.eu-west-1.amazonaws.com",
+    \\   "auth":{"proxy":{"argv":[
+    ++ argv ++
+        \\]}}}]}
+    ;
+}
+
+test "rejects a gateway whose proxy can be executed in the sandbox" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    try std.testing.expectError(error.GatewayInSandbox, parse(arena_state.allocator(), try store.parse(test_root), test_paths, gatewayManifest("\"/nix/store/lw5h7x6kxqdx6m8wnsqjjzj6fd1i9x2j-ripgrep-15.2.0/bin/aws-sigv4-proxy\"")));
+}
+
+test "rejects a gateway proxy outside the store" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    try std.testing.expectError(error.InvalidStorePath, parse(arena_state.allocator(), try store.parse(test_root), test_paths, gatewayManifest("\"/opt/homebrew/bin/aws-sigv4-proxy\"")));
+}
+
+test "rejects a gateway proxy without argv" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    try std.testing.expectError(error.EmptyProxyArgv, parse(arena_state.allocator(), try store.parse(test_root), test_paths, gatewayManifest("")));
+}
+
+test "accepts a gateway whose proxy stays outside the sandbox" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const env = try parse(arena_state.allocator(), try store.parse(test_root), test_paths, gatewayManifest("\"/nix/store/bz0ghsayh5s01kb5dzfvjg2gprm3mzgs-aws-sigv4-proxy-1.13/bin/aws-sigv4-proxy\""));
+    try std.testing.expectEqualStrings("bedrock", env.manifest.gateways[0].name);
 }

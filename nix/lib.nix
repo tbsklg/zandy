@@ -12,11 +12,21 @@ let
       cfg = (lib.evalModules {
         modules = [ ./options.nix (builtins.removeAttrs args [ "pkgs" ]) ];
       }).config;
-      inherit (cfg) preset backend;
+      inherit (cfg) preset;
       inherit (zandyFor pkgs) zandy zandy-client;
 
-      backendAdapters = lib.optional (backend.bedrock != null) (import ./adapters/backend.nix backend.bedrock);
-      resolvedAdapters = map (adapter: adapter pkgs) (cfg.adapters ++ backendAdapters);
+      resolvedAdapters = map (adapter: adapter pkgs) cfg.adapters;
+      resolvedGateways = map (gateway: gateway pkgs) cfg.gateways;
+
+      # The preset's env vars for each configured gateway; a function gets the gateway, e.g. for its region.
+      gatewayEnv = lib.concatMap
+        (gateway:
+          let
+            vars = preset.gatewayEnv.${gateway.name} or { };
+            resolved = if lib.isFunction vars then vars gateway else vars;
+          in
+          lib.mapAttrsToList (name: value: { gateway = gateway.name; inherit name value; }) resolved)
+        resolvedGateways;
 
       sandboxPackages = preset.packages pkgs ++ [ zandy-client ] ++ cfg.packages;
       clashes = builtins.filter (adapter: builtins.elem adapter.package sandboxPackages) resolvedAdapters;
@@ -29,8 +39,8 @@ let
 
       manifest = {
         preset = {
-          inherit (preset) name binary env;
-          args = preset.args { settings = preset.settings backend; };
+          inherit (preset) name binary env args;
+          inherit gatewayEnv;
           profile.rules = preset.rules;
         };
         adapters = map
@@ -40,6 +50,7 @@ let
             env = adapter.env or [ ];
           })
           resolvedAdapters;
+        gateways = map (gateway: { inherit (gateway) name upstream auth; }) resolvedGateways;
         inherit (cfg) filesystem;
       };
     in

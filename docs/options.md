@@ -54,64 +54,6 @@ list of function that evaluates to a(n) (attribute set)
 
 
 
-## backend\.bedrock
-
-
-
-Run the model through Amazon Bedrock; the credentials come from the broker\.
-
-
-
-*Type:*
-null or (submodule)
-
-
-
-*Default:*
-
-```nix
-null
-```
-
-
-
-*Example:*
-
-```nix
-{
-  profile = "acme-bedrock";
-  region = "eu-west-1";
-}
-```
-
-
-
-## backend\.bedrock\.profile
-
-
-
-AWS profile the broker exports Bedrock credentials from\.
-
-
-
-*Type:*
-string
-
-
-
-## backend\.bedrock\.region
-
-
-
-AWS region of Bedrock\.
-
-
-
-*Type:*
-string
-
-
-
 ## filesystem\.allowRead
 
 
@@ -196,6 +138,35 @@ list of string
 
 
 
+## gateways
+
+
+
+Model backends the broker forwards to, adding auth outside the sandbox\.
+
+
+
+*Type:*
+list of function that evaluates to a(n) (attribute set)
+
+
+
+*Default:*
+
+```nix
+[ ]
+```
+
+
+
+*Example:*
+
+```nix
+[ (zandy.gateways.bedrock { profile = "acme-bedrock"; region = "eu-west-1"; }) ]
+```
+
+
+
 ## name
 
 
@@ -247,19 +218,19 @@ function that evaluates to a(n) list of package
 
 
 
-Startup args, given ` { settings } `\.
+Startup args\.
 
 
 
 *Type:*
-function that evaluates to a(n) list of string
+list of string
 
 
 
 *Default:*
 
 ```nix
-<function>
+[ ]
 ```
 
 
@@ -298,6 +269,27 @@ list of string
 
 
 
+## preset\.gatewayEnv
+
+
+
+Env vars the app gets per gateway name, or a function of the gateway; ` {url} ` becomes the gateway’s address\.
+
+
+
+*Type:*
+attribute set of ((attribute set of string) or function that evaluates to a(n) attribute set of string)
+
+
+
+*Default:*
+
+```nix
+{ }
+```
+
+
+
 ## preset\.name
 
 
@@ -328,27 +320,6 @@ list of (attribute set)
 
 ```nix
 [ ]
-```
-
-
-
-## preset\.settings
-
-
-
-App settings, given ` backend `\.
-
-
-
-*Type:*
-function that evaluates to a(n) raw value
-
-
-
-*Default:*
-
-```nix
-<function>
 ```
 
 

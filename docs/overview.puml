@@ -12,7 +12,7 @@ rectangle "build time" {
 }
 
 rectangle "run time" {
-  component "Zig\nbuilds the profile, runs the broker" as Zig
+  component "Zig\nbuilds the profile, starts the gateway, runs the broker" as Zig
 
   rectangle "Seatbelt sandbox" #EEF {
     component "agent" as Agent
@@ -21,7 +21,10 @@ rectangle "run time" {
   rectangle "outside" {
     component "broker" as Broker
     component "external tools\n(credentials)" as Tools
+    component "gateway\n(proxy with the model key)" as Gateway
   }
+
+  cloud "model backend" as Model
 }
 
 Flake --> Nix
@@ -31,4 +34,7 @@ Zig --> Agent : profile
 Zig --> Broker
 Agent --> Broker : request
 Broker --> Tools : runs
+Zig --> Gateway : starts
+Agent --> Gateway : HTTP
+Gateway --> Model : HTTPS + auth
 @enduml

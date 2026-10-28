@@ -43,28 +43,28 @@ let
             env = adapter.env or [ ];
           })
           resolvedAdapters;
-        gateway = if gateway == null then null else { inherit (gateway) name upstream auth; };
+        gateway = if gateway == null then null else { inherit (gateway) name argv; env = gateway.env or { }; };
         inherit (cfg) filesystem;
+      };
+
+      env = pkgs.linkFarm "${cfg.name}-env" [
+        { name = "sandbox/bin"; path = "${bin}/bin"; }
+        { name = "store-paths"; path = "${closure}/store-paths"; }
+        { name = "zandy.json"; path = (pkgs.formats.json { }).generate "zandy.json" manifest; }
+      ];
+
+      launcher = pkgs.writeShellApplication {
+        name = "zandy-${cfg.name}";
+        text = ''exec ${zandy}/bin/zandy --env ${env} "$@"'';
       };
     in
     assert lib.assertMsg (clashes == [ ])
       "zandy: ${lib.concatMapStringsSep ", " (adapter: adapter.name) clashes} adapter packages must not be in packages; the broker runs them outside the sandbox";
-    pkgs.runCommand cfg.name
-      {
-        manifest = builtins.toJSON manifest;
-        passAsFile = [ "manifest" ];
-        meta.mainProgram = "zandy-${cfg.name}";
-      } ''
-      mkdir -p $out/sandbox $out/bin
-      ln -s ${bin}/bin $out/sandbox/bin
-      cp ${closure}/store-paths $out/store-paths
-      cp $manifestPath $out/zandy.json
-      cat > $out/bin/zandy-${cfg.name} <<EOF
-      #!/bin/sh
-      exec ${zandy}/bin/zandy --env $out "\$@"
-      EOF
-      chmod +x $out/bin/zandy-${cfg.name}
-    '';
+    pkgs.symlinkJoin {
+      name = cfg.name;
+      paths = [ env launcher ];
+      meta.mainProgram = "zandy-${cfg.name}";
+    };
 in
 {
   inherit mkSandboxEnv zandyFor;

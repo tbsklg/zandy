@@ -17,8 +17,7 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     const preset = manifest.preset;
     const bin_dir = sandbox_env.bin;
 
-    var client: std.http.Client = .{ .allocator = init.gpa, .io = io };
-    var running: ?gateway.Running = if (manifest.gateway) |config| gateway.start(arena, io, &client, config, environ) catch |err| {
+    var running: ?gateway.Running = if (manifest.gateway) |config| gateway.start(arena, io, config, environ) catch |err| {
         std.debug.print("zandy: gateway '{s}' could not start: {t}\n", .{ config.name, err });
         return err;
     } else null;
@@ -26,7 +25,7 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
 
     var gateway_rule: [1]sbpl.Rule = undefined;
     const gateway_rules: []const sbpl.Rule = if (running) |*r| rules: {
-        gateway_rule[0] = sbpl.Rule.allow(.network_outbound, .{ .remote_tcp = try std.fmt.allocPrint(arena, "localhost:{d}", .{gateway.port(&r.server)}) });
+        gateway_rule[0] = sbpl.Rule.allow(.network_outbound, .{ .remote_tcp = try std.fmt.allocPrint(arena, "localhost:{d}", .{r.port}) });
         break :rules &gateway_rule;
     } else &.{};
 
@@ -98,11 +97,6 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
 
     const thread = try std.Thread.spawn(.{}, broker.serveLoop, .{ io, init.gpa, &server, &ctx });
     thread.detach();
-
-    if (running) |*r| {
-        const gateway_thread = try std.Thread.spawn(.{}, gateway.serveLoop, .{ io, init.gpa, &r.server, &r.upstream });
-        gateway_thread.detach();
-    }
 
     _ = std.c.waitpid(pid, null, 0);
 

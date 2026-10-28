@@ -6,7 +6,7 @@ Coding agents like Claude Code and opencode run with your user's permissions: re
 
 - **Files:** the project directory, not the rest of `$HOME`.
 - **Programs:** only those in the env; nothing from Homebrew or `/usr/bin`.
-- **Credentials:** none. Tools that need them, like `glab` and `aws`, run outside the sandbox through a broker.
+- **Credentials:** none. Tools that need them, like `glab` and `aws`, run outside the sandbox through a broker; the model backend is reached through a gateway that holds its key.
 
 ## Vision
 
@@ -14,7 +14,7 @@ zandy is a proof of concept. The goal is a self-contained, declarative sandbox t
 
 - **A pure function of its declaration.** One flake describes everything an agent gets: tools, filesystem, network, credentials and the model backend. The same flake always yields the same sandbox; nothing outside it, no global config or state in `$HOME`, changes the result.
 - **Immutable.** The built sandbox is a read-only value in `/nix/store`. Changing it means changing the declaration and building a new one, not mutating the old one.
-- **Side effects at the edge.** The sandbox holds no credentials. Effects that need them happen outside, in the broker, through explicit requests.
+- **Side effects at the edge.** The sandbox holds no credentials. Effects that need them happen outside, in the broker or the gateway, through explicit requests.
 - **Parse, don't validate.** Every input is parsed into a precise type, once, at the boundary: the flake by the Nix options, the manifest and requests by zandy.
 
 Next steps are in [TODO.md](TODO.md).
@@ -36,7 +36,7 @@ Nix is a package manager that builds every package into its own read-only direct
 ![overview](docs/overview.png)
 
 - **Nix describes the sandbox:** which tools live inside, which stay outside behind the broker. The result holds no secrets.
-- **zandy** (Zig) turns that into a Seatbelt profile, starts the agent and runs the broker, which brings in credentials outside the sandbox.
+- **zandy** (Zig) turns that into a Seatbelt profile, starts the gateway and the agent, and runs the broker. Credentials only exist outside the sandbox.
 - **Seatbelt**, the macOS kernel sandbox, enforces the profile.
 
 Install Nix and enable flakes:
@@ -46,13 +46,13 @@ sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install)
 mkdir -p ~/.config/nix && echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
 ```
 
-Check with `nix flake --help`. zandy needs nothing else besides macOS; Zig, claude, glab and aws all come from Nix.
+Check with `nix flake --help`. zandy needs nothing else besides macOS; Zig, claude, glab, aws and the gateway proxies all come from Nix.
 
 ## Quickstart
 
 You need:
 
-- An AWS profile with Bedrock access in `~/.aws/config`, logged in (e.g. `aws sso login --profile acme-bedrock`). The claude preset runs Claude Code through Bedrock.
+- A model backend for the gateway: an AWS profile with Bedrock access in `~/.aws/config`, logged in (e.g. `aws sso login --profile acme-bedrock`), or `ANTHROPIC_API_KEY` exported in the shell. See [Model backend](#model-backend).
 - The env vars of the adapters you keep, exported in the shell that starts zandy, e.g. `GITLAB_TOKEN` for `zandy.adapters.gitlab`.
 
 ```sh
@@ -100,11 +100,25 @@ zandy.lib.mkSandboxEnv {
 | `name` | The env's name; the launcher becomes `zandy-<name>` |
 | `preset` | The app to run and the sandbox rules it needs |
 | `packages` | Extra programs on the agent's `PATH` |
-| `gateway` | The model backend the agent reaches through the broker: `zandy.gateways.bedrock`, `.anthropic` or `.openai`; its credentials stay outside the sandbox |
+| `gateway` | The model backend, reached through a local proxy outside the sandbox: `zandy.gateways.bedrock`, `.anthropic` or `.openai`; its credentials stay outside |
 | `adapters` | Tools the broker runs outside the sandbox; listing one makes it callable |
 | `filesystem` | Extra paths to allow or deny for reading and writing |
 
 Unknown or mistyped options fail at build time. Full reference with types and defaults: [docs/options.md](docs/options.md), generated with `nix build .#options-doc`.
+
+## Model backend
+
+The agent reaches its model through a gateway: a local proxy zandy starts outside the sandbox, which adds the credentials and forwards to one fixed upstream. The sandbox can only reach the gateway's port; the key never enters it.
+
+| Gateway | Proxy | Needs in the shell that starts zandy |
+|---|---|---|
+| `zandy.gateways.bedrock { profile; region; }` | `aws-sigv4-proxy`, signs with the profile | a logged-in AWS profile |
+| `zandy.gateways.anthropic { }` | Caddy, sets `X-Api-Key` | `ANTHROPIC_API_KEY` |
+| `zandy.gateways.openai { host ? "api.openai.com"; }` | Caddy, sets `Authorization: Bearer` | `OPENAI_API_KEY` |
+
+The preset decides how the app finds the gateway, via `gatewayEnv`. The claude preset sets `ANTHROPIC_BEDROCK_BASE_URL` and `CLAUDE_CODE_SKIP_BEDROCK_AUTH` for Bedrock, and `ANTHROPIC_BASE_URL` for Anthropic. One gateway at a time; without one, the app reaches no model through zandy.
+
+If Bedrock answers `refresh cached SSO token failed … InvalidGrantException`, the SSO session has expired: run `aws sso login --profile <profile>` again.
 
 ## Write your own adapter
 
@@ -157,7 +171,7 @@ Whatever the command can do, the agent can do. Prefer narrow methods with `strin
 
 - Read and write the working directory, except `flake.nix`, `flake.lock`, `.envrc`, `.git/config` and `.git/hooks`.
 - Run only programs from the env (`PATH` is the env's `sandbox/bin`). Homebrew, `/usr/bin` and downloaded binaries are blocked.
-- Connect to port 443 and DNS. Nothing else.
+- Connect to port 443, DNS and the gateway's port on localhost. Nothing else.
 - Use credentials only through the broker:
 
   ```sh
@@ -172,5 +186,8 @@ Details and design decisions: [design.md](design.md).
 ## Development
 
 ```sh
-nix develop -c zig build test
+nix develop -c zig build test   # while working on zandy
+nix flake check                  # the same tests, built and run by Nix
 ```
+
+`nix run` and `nix profile` only build zandy; the tests run in `nix flake check`, not on every machine that installs it.

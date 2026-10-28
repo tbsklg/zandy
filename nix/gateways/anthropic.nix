@@ -1,5 +1,6 @@
-{ env ? "ANTHROPIC_API_KEY" }: _: {
+{ env ? "ANTHROPIC_API_KEY" }:
+import ./caddy.nix {
   name = "anthropic";
-  upstream = "https://api.anthropic.com";
-  auth.header = { name = "x-api-key"; inherit env; };
+  host = "api.anthropic.com";
+  headers.X-Api-Key = [ "{env.${env}}" ];
 }

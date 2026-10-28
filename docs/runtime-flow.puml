@@ -17,6 +17,7 @@ participant "macos / libsandbox" as Sandbox
 participant "preset binary\nsandbox/bin/<binary>" as Bin
 participant "zandy-client" as Client
 participant "adapter binary\n/nix/store/…" as Tool
+participant "gateway proxy\ncaddy / aws-sigv4-proxy" as Gateway
 
 User -> Launcher : zandy-claude [args]  (or nix run)
 Launcher -> Main : exec zandy --env <env> [args]
@@ -36,9 +37,10 @@ Main -> Profile : buildProfile(preset.profile, env, filesystem, closure)
 Profile --> Main : sbpl.Profile (preset rules + exec/read per store path + filesystem)
 
 Main -> Launch : launch(init, sandbox_env, args, profile, env)
-Launch -> Launch : serialize(profile) → SBPL text
+Launch -> Gateway : start(argv, env + ZANDY_GATEWAY_PORT), wait until listening
+Launch -> Launch : serialize(profile + allow localhost:<gateway port>) → SBPL text
 Launch -> Broker : listen(BROKER_SOCK)
-Launch -> Launch : sandbox Environ.Map (preset env names + PATH, SHELL, BROKER_SOCK, BROKER_TICKET)
+Launch -> Launch : sandbox Environ.Map (preset env names + PATH, SHELL, BROKER_SOCK, BROKER_TICKET, gatewayEnv with {url})
 Launch -> Registry : parseAdapters(manifest.adapters)
 Registry --> Launch : []Capability
 
@@ -53,6 +55,13 @@ end
 group parent process
   Launch -> Broker : serveLoop (thread)
   Launch -> Launch : waitpid(child)
+  Launch -> Gateway : stop
+end
+
+group model request
+  Bin -> Gateway : HTTP to {url}
+  Gateway -> Gateway : add credentials, forward to the fixed upstream
+  Gateway --> Bin : streamed response
 end
 
 group broker call

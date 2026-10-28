@@ -1,5 +1,6 @@
-{ env ? "OPENAI_API_KEY", upstream ? "https://api.openai.com" }: _: {
+{ env ? "OPENAI_API_KEY", host ? "api.openai.com" }:
+import ./caddy.nix {
   name = "openai";
-  inherit upstream;
-  auth.header = { name = "authorization"; prefix = "Bearer "; inherit env; };
+  inherit host;
+  headers.Authorization = [ "Bearer {env.${env}}" ];
 }

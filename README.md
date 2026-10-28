@@ -86,7 +86,7 @@ zandy.lib.mkSandboxEnv {
   name = "claude";                                  # launcher: zandy-claude
   preset = zandy.presets.claude;                    # or zandy.presets.opencode
   packages = [ pkgs.ripgrep ];                      # extra programs the agent may run
-  gateways = [ (zandy.gateways.bedrock { profile = "acme-bedrock"; region = "eu-west-1"; }) ];
+  gateway = zandy.gateways.bedrock { profile = "acme-bedrock"; region = "eu-west-1"; };
   adapters = [
     zandy.adapters.gitlab                           # gitlab.cli, uses GITLAB_TOKEN
     (zandy.adapters.aws { profiles = [ "acme-dev" ]; })
@@ -100,7 +100,7 @@ zandy.lib.mkSandboxEnv {
 | `name` | The env's name; the launcher becomes `zandy-<name>` |
 | `preset` | The app to run and the sandbox rules it needs |
 | `packages` | Extra programs on the agent's `PATH` |
-| `gateways` | Model backends the agent reaches through the broker, e.g. `zandy.gateways.bedrock`, `.anthropic` or `.openai`; their credentials stay outside the sandbox |
+| `gateway` | The model backend the agent reaches through the broker: `zandy.gateways.bedrock`, `.anthropic` or `.openai`; its credentials stay outside the sandbox |
 | `adapters` | Tools the broker runs outside the sandbox; listing one makes it callable |
 | `filesystem` | Extra paths to allow or deny for reading and writing |
 

@@ -14,7 +14,6 @@ pub const Auth = union(enum) {
         env: []const u8,
         prefix: []const u8 = "",
     },
-    /// A local process that adds the auth itself, e.g. aws-sigv4-proxy; `{port}` in `argv` is where it listens.
     proxy: struct {
         argv: []const []const u8,
         env: std.json.ArrayHashMap([]const u8) = .{},
@@ -24,13 +23,11 @@ pub const Auth = union(enum) {
 pub const Upstream = struct {
     client: *std.http.Client,
     url: []const u8,
-    /// Null when a proxy adds the auth.
     auth: ?std.http.Header,
 };
 
 const hop_by_hop = [_][]const u8{ "connection", "keep-alive", "proxy-connection", "transfer-encoding", "te", "trailer", "upgrade", "content-length", "host" };
 
-// Credentials from the sandbox are never forwarded; the gateway sets its own.
 const credential_headers = [_][]const u8{ "authorization", "proxy-authorization", "x-api-key" };
 
 pub fn listen(io: std.Io) !std.Io.net.Server {
@@ -49,7 +46,6 @@ pub fn resolveHeader(arena: std.mem.Allocator, auth: @FieldType(Auth, "header"),
     return .{ .name = auth.name, .value = value };
 }
 
-/// A gateway listening for the sandbox, with its auth already resolved.
 pub const Running = struct {
     name: []const u8,
     server: std.Io.net.Server,
@@ -112,13 +108,12 @@ fn startProxy(arena: std.mem.Allocator, io: std.Io, proxy: @FieldType(Auth, "pro
     return error.ProxyNotListening;
 }
 
-/// Env vars the preset declares for the running gateways, with `{url}` filled in.
-pub fn environFor(arena: std.mem.Allocator, entries: []const Env, running: []const Running) ![]const std.http.Header {
+pub fn environFor(arena: std.mem.Allocator, entries: []const Env, running: Running) ![]const std.http.Header {
     var vars: std.ArrayList(std.http.Header) = .empty;
-    for (entries) |entry| for (running) |gateway| {
-        if (!std.mem.eql(u8, entry.gateway, gateway.name)) continue;
-        try vars.append(arena, .{ .name = entry.name, .value = try std.mem.replaceOwned(u8, arena, entry.value, "{url}", gateway.url) });
-    };
+    for (entries) |entry| {
+        if (!std.mem.eql(u8, entry.gateway, running.name)) continue;
+        try vars.append(arena, .{ .name = entry.name, .value = try std.mem.replaceOwned(u8, arena, entry.value, "{url}", running.url) });
+    }
     return vars.items;
 }
 
@@ -128,7 +123,6 @@ pub const Env = struct {
     value: []const u8,
 };
 
-/// Serves each connection on its own thread: a streamed answer must not hold up the next request.
 pub fn serveLoop(io: std.Io, gpa: std.mem.Allocator, server: *std.Io.net.Server, upstream: *const Upstream) void {
     while (true) {
         const conn = server.accept(io) catch |err| {
@@ -209,7 +203,6 @@ fn forward(arena: std.mem.Allocator, request: *std.http.Server.Request, upstream
         },
     });
 
-    // Flush after every read so streamed model output reaches the agent as it arrives.
     var transfer_buf: [4096]u8 = undefined;
     const body = response.reader(&transfer_buf);
     while (true) {
@@ -231,9 +224,10 @@ fn requestHeaders(arena: std.mem.Allocator, it: std.http.HeaderIterator, auth: ?
     var headers: std.ArrayList(std.http.Header) = .empty;
     var iter = it;
     while (iter.next()) |header| {
-        if (isAny(header.name, &hop_by_hop) or isAny(header.name, &credential_headers)) continue;
-        if (auth) |own| if (std.ascii.eqlIgnoreCase(header.name, own.name)) continue;
-        try headers.append(arena, try dupeHeader(arena, header));
+        switch (headerKind(header.name, auth)) {
+            .end_to_end => try headers.append(arena, try dupeHeader(arena, header)),
+            .hop_by_hop, .credential => {},
+        }
     }
     if (auth) |own| try headers.append(arena, own);
     return headers.items;
@@ -243,8 +237,10 @@ fn responseHeaders(arena: std.mem.Allocator, it: std.http.HeaderIterator) ![]con
     var headers: std.ArrayList(std.http.Header) = .empty;
     var iter = it;
     while (iter.next()) |header| {
-        if (isAny(header.name, &hop_by_hop)) continue;
-        try headers.append(arena, try dupeHeader(arena, header));
+        switch (headerKind(header.name, null)) {
+            .end_to_end, .credential => try headers.append(arena, try dupeHeader(arena, header)),
+            .hop_by_hop => {},
+        }
     }
     return headers.items;
 }
@@ -253,11 +249,17 @@ fn dupeHeader(arena: std.mem.Allocator, header: std.http.Header) !std.http.Heade
     return .{ .name = try arena.dupe(u8, header.name), .value = try arena.dupe(u8, header.value) };
 }
 
-fn isAny(name: []const u8, names: []const []const u8) bool {
-    for (names) |candidate| {
-        if (std.ascii.eqlIgnoreCase(name, candidate)) return true;
+const HeaderKind = enum { hop_by_hop, credential, end_to_end };
+
+fn headerKind(name: []const u8, auth: ?std.http.Header) HeaderKind {
+    for (hop_by_hop) |candidate| {
+        if (std.ascii.eqlIgnoreCase(name, candidate)) return .hop_by_hop;
     }
-    return false;
+    for (credential_headers) |candidate| {
+        if (std.ascii.eqlIgnoreCase(name, candidate)) return .credential;
+    }
+    if (auth) |own| if (std.ascii.eqlIgnoreCase(name, own.name)) return .credential;
+    return .end_to_end;
 }
 
 const FakeUpstream = struct {
@@ -300,7 +302,6 @@ fn serveOnce(server: *std.Io.net.Server, upstream: *const Upstream) void {
     serve(std.testing.io, std.testing.allocator, server, upstream) catch {};
 }
 
-/// Sends `raw` to the gateway as the agent would and returns everything it answers.
 fn send(server: *const std.Io.net.Server, raw: []const u8, response: []u8) ![]const u8 {
     const io = std.testing.io;
     const address = try std.Io.net.IpAddress.parseIp4("127.0.0.1", port(server));
@@ -391,18 +392,18 @@ test "answers bad gateway when the upstream is unreachable" {
     try std.testing.expect(std.mem.startsWith(u8, response, "HTTP/1.1 502 Bad Gateway\r\n"));
 }
 
-test "environFor fills in the url of the gateways that run" {
+test "environFor fills in the url of the running gateway" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    const running = [_]Running{.{ .name = "anthropic", .server = undefined, .upstream = undefined, .url = "http://127.0.0.1:4711" }};
+    const running: Running = .{ .name = "anthropic", .server = undefined, .upstream = undefined, .url = "http://127.0.0.1:4711" };
     const entries = [_]Env{
         .{ .gateway = "anthropic", .name = "ANTHROPIC_BASE_URL", .value = "{url}" },
         .{ .gateway = "anthropic", .name = "ANTHROPIC_AUTH_TOKEN", .value = "zandy-gateway" },
         .{ .gateway = "bedrock", .name = "ANTHROPIC_BEDROCK_BASE_URL", .value = "{url}" },
     };
 
-    const vars = try environFor(arena_state.allocator(), &entries, &running);
+    const vars = try environFor(arena_state.allocator(), &entries, running);
     try std.testing.expectEqual(2, vars.len);
     try std.testing.expectEqualStrings("http://127.0.0.1:4711", vars[0].value);
     try std.testing.expectEqualStrings("zandy-gateway", vars[1].value);

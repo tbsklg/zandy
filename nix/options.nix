@@ -44,11 +44,11 @@ in
       example = lib.literalExpression ''[ zandy.adapters.gitlab (zandy.adapters.aws { profiles = [ "acme-dev" ]; }) ]'';
     };
 
-    gateways = mkOption {
-      type = types.listOf (types.functionTo types.attrs);
-      default = [ ];
-      description = "Model backends the broker forwards to, adding auth outside the sandbox.";
-      example = lib.literalExpression ''[ (zandy.gateways.bedrock { profile = "acme-bedrock"; region = "eu-west-1"; }) ]'';
+    gateway = mkOption {
+      type = types.nullOr (types.functionTo types.attrs);
+      default = null;
+      description = "The model backend the broker forwards to, adding auth outside the sandbox.";
+      example = lib.literalExpression ''zandy.gateways.bedrock { profile = "acme-bedrock"; region = "eu-west-1"; }'';
     };
 
 

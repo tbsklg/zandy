@@ -138,23 +138,23 @@ list of string
 
 
 
-## gateways
+## gateway
 
 
 
-Model backends the broker forwards to, adding auth outside the sandbox\.
+The model backend the broker forwards to, adding auth outside the sandbox\.
 
 
 
 *Type:*
-list of function that evaluates to a(n) (attribute set)
+null or (function that evaluates to a(n) (attribute set))
 
 
 
 *Default:*
 
 ```nix
-[ ]
+null
 ```
 
 
@@ -162,7 +162,7 @@ list of function that evaluates to a(n) (attribute set)
 *Example:*
 
 ```nix
-[ (zandy.gateways.bedrock { profile = "acme-bedrock"; region = "eu-west-1"; }) ]
+zandy.gateways.bedrock { profile = "acme-bedrock"; region = "eu-west-1"; }
 ```
 
 

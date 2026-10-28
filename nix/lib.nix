@@ -1,9 +1,5 @@
-{ zig-overlay }:
 let
-  zandyFor = pkgs: import ./zandy.nix {
-    inherit pkgs;
-    zig = zig-overlay.packages.${pkgs.stdenv.hostPlatform.system}."0.16.0";
-  };
+  zandyFor = pkgs: import ./zandy.nix { inherit pkgs; };
 
   mkSandboxEnv = { pkgs, ... }@args:
     let
@@ -16,17 +12,14 @@ let
       inherit (zandyFor pkgs) zandy zandy-client;
 
       resolvedAdapters = map (adapter: adapter pkgs) cfg.adapters;
-      resolvedGateways = map (gateway: gateway pkgs) cfg.gateways;
+      gateway = if cfg.gateway == null then null else cfg.gateway pkgs;
 
-      # The preset's env vars for each configured gateway; a function gets the gateway, e.g. for its region.
-      gatewayEnv = lib.concatMap
-        (gateway:
-          let
-            vars = preset.gatewayEnv.${gateway.name} or { };
-            resolved = if lib.isFunction vars then vars gateway else vars;
-          in
-          lib.mapAttrsToList (name: value: { gateway = gateway.name; inherit name value; }) resolved)
-        resolvedGateways;
+      gatewayEnv =
+        let
+          vars = if gateway == null then { } else preset.gatewayEnv.${gateway.name} or { };
+          resolved = if lib.isFunction vars then vars gateway else vars;
+        in
+        lib.mapAttrsToList (name: value: { gateway = gateway.name; inherit name value; }) resolved;
 
       sandboxPackages = preset.packages pkgs ++ [ zandy-client ] ++ cfg.packages;
       clashes = builtins.filter (adapter: builtins.elem adapter.package sandboxPackages) resolvedAdapters;
@@ -50,7 +43,7 @@ let
             env = adapter.env or [ ];
           })
           resolvedAdapters;
-        gateways = map (gateway: { inherit (gateway) name upstream auth; }) resolvedGateways;
+        gateway = if gateway == null then null else { inherit (gateway) name upstream auth; };
         inherit (cfg) filesystem;
       };
     in

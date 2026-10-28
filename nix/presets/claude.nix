@@ -15,7 +15,6 @@ in
   gatewayEnv = {
     anthropic = {
       ANTHROPIC_BASE_URL = "{url}";
-      # Claude Code needs a token to skip its login; the gateway replaces it with the real key.
       ANTHROPIC_AUTH_TOKEN = "zandy-gateway";
     };
     bedrock = gateway: {

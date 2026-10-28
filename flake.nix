@@ -3,13 +3,12 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    zig-overlay.url = "github:mitchellh/zig-overlay";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { nixpkgs, zig-overlay, flake-utils, ... }:
+  outputs = { nixpkgs, flake-utils, ... }:
     let
-      lib = import ./nix/lib.nix { inherit zig-overlay; };
+      lib = import ./nix/lib.nix;
     in
     {
       lib = { inherit (lib) mkSandboxEnv; };
@@ -41,8 +40,7 @@
           inherit system;
           config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [ "claude-code" ];
         };
-        zig = zig-overlay.packages.${system}."0.16.0";
-        inherit (lib.zandyFor pkgs) zandy zandy-client;
+        inherit (lib.zandyFor pkgs) zig zandy zandy-client;
       in
       {
         packages = {
@@ -56,7 +54,7 @@
             name = "demo";
             preset = import ./nix/presets/claude.nix;
             packages = [ pkgs.ripgrep ];
-            gateways = [ (import ./nix/gateways/bedrock.nix { profile = "acme-bedrock"; region = "eu-west-1"; }) ];
+            gateway = import ./nix/gateways/bedrock.nix { profile = "acme-bedrock"; region = "eu-west-1"; };
             adapters = [
               (import ./nix/adapters/gitlab.nix)
               (import ./nix/adapters/aws.nix { profiles = [ "acme-dev" ]; })

@@ -18,18 +18,17 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     const bin_dir = sandbox_env.bin;
 
     var client: std.http.Client = .{ .allocator = init.gpa, .io = io };
-    const gateways = try arena.alloc(gateway.Running, manifest.gateways.len);
-    const gateway_rules = try arena.alloc(sbpl.Rule, gateways.len);
-    for (manifest.gateways, gateways, gateway_rules) |config, *running, *rule| {
-        running.* = gateway.start(arena, io, &client, config, environ) catch |err| {
-            std.debug.print("zandy: gateway '{s}' could not start: {t}\n", .{ config.name, err });
-            return err;
-        };
-        errdefer running.stop(io);
-        rule.* = sbpl.Rule.allow(.network_outbound, .{ .remote_tcp = try std.fmt.allocPrint(arena, "localhost:{d}", .{gateway.port(&running.server)}) });
-    }
+    var running: ?gateway.Running = if (manifest.gateway) |config| gateway.start(arena, io, &client, config, environ) catch |err| {
+        std.debug.print("zandy: gateway '{s}' could not start: {t}\n", .{ config.name, err });
+        return err;
+    } else null;
+    defer if (running) |*r| r.stop(io);
 
-    defer for (gateways) |*running| running.stop(io);
+    var gateway_rule: [1]sbpl.Rule = undefined;
+    const gateway_rules: []const sbpl.Rule = if (running) |*r| rules: {
+        gateway_rule[0] = sbpl.Rule.allow(.network_outbound, .{ .remote_tcp = try std.fmt.allocPrint(arena, "localhost:{d}", .{gateway.port(&r.server)}) });
+        break :rules &gateway_rule;
+    } else &.{};
 
     const profile_z = try serialize(arena, .{ .version = profile.version, .deny_default = profile.deny_default, .rules = try std.mem.concat(arena, sbpl.Rule, &.{ profile.rules, gateway_rules }) });
     const path = try std.fs.path.joinZ(arena, &.{ bin_dir, preset.binary });
@@ -69,7 +68,7 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     try sandbox_environ.put("SHELL", try std.fs.path.join(arena, &.{ bin_dir, "bash" }));
     try sandbox_environ.put("BROKER_SOCK", sock_path);
     try sandbox_environ.put("BROKER_TICKET", &ticket);
-    for (try gateway.environFor(arena, preset.gatewayEnv, gateways)) |entry| try sandbox_environ.put(entry.name, entry.value);
+    if (running) |r| for (try gateway.environFor(arena, preset.gatewayEnv, r)) |entry| try sandbox_environ.put(entry.name, entry.value);
     const envp = try sandbox_environ.createPosixBlock(arena, .{});
 
     const ctx: rpc.Context = .{ .ticket = &ticket, .registry = .{ .capabilities = try registry.parseAdapters(arena, manifest.adapters) }, .environ = environ };
@@ -100,8 +99,8 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     const thread = try std.Thread.spawn(.{}, broker.serveLoop, .{ io, init.gpa, &server, &ctx });
     thread.detach();
 
-    for (gateways) |*running| {
-        const gateway_thread = try std.Thread.spawn(.{}, gateway.serveLoop, .{ io, init.gpa, &running.server, &running.upstream });
+    if (running) |*r| {
+        const gateway_thread = try std.Thread.spawn(.{}, gateway.serveLoop, .{ io, init.gpa, &r.server, &r.upstream });
         gateway_thread.detach();
     }
 

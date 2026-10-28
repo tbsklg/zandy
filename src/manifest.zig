@@ -22,7 +22,7 @@ pub const FileSystem = struct {
 pub const Manifest = struct {
     preset: Preset,
     adapters: []const registry.Adapter = &.{},
-    gateways: []const gateway.Gateway = &.{},
+    gateway: ?gateway.Gateway = null,
     filesystem: FileSystem = .{},
 };
 
@@ -50,34 +50,38 @@ test "parses a manifest and defaults filesystem" {
     try std.testing.expectEqual(null, manifest.preset.profile.rules[1].filter);
     try std.testing.expectEqualStrings("gitlab", manifest.adapters[0].name);
     try std.testing.expectEqual(0, manifest.filesystem.allowWrite.len);
-    try std.testing.expectEqual(0, manifest.gateways.len);
+    try std.testing.expectEqual(null, manifest.gateway);
 }
 
-test "parses gateways with their auth" {
+test "parses a gateway behind a proxy" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
     const manifest = try parse(arena_state.allocator(),
         \\{"preset":{"name":"claude","binary":"claude","profile":{}},
-        \\ "gateways":[
-        \\   {"name":"bedrock","upstream":"https://bedrock-runtime.eu-west-1.amazonaws.com",
-        \\    "auth":{"proxy":{"argv":["/nix/store/lw5h7x6kxqdx6m8wnsqjjzj6fd1i9x2j-aws-sigv4-proxy-1.13/bin/aws-sigv4-proxy","--port","127.0.0.1:{port}"],
-        \\      "env":{"AWS_PROFILE":"acme-bedrock"}}}},
-        \\   {"name":"openai","upstream":"https://api.openai.com",
-        \\    "auth":{"header":{"name":"authorization","env":"OPENAI_API_KEY","prefix":"Bearer "}}},
-        \\   {"name":"anthropic","upstream":"https://api.anthropic.com",
-        \\    "auth":{"header":{"name":"x-api-key","env":"ANTHROPIC_API_KEY"}}}]}
+        \\ "gateway":{"name":"bedrock","upstream":"https://bedrock-runtime.eu-west-1.amazonaws.com",
+        \\   "auth":{"proxy":{"argv":["/nix/store/lw5h7x6kxqdx6m8wnsqjjzj6fd1i9x2j-aws-sigv4-proxy-1.13/bin/aws-sigv4-proxy","--port","127.0.0.1:{port}"],
+        \\     "env":{"AWS_PROFILE":"acme-bedrock"}}}}}
     );
 
-    const bedrock = manifest.gateways[0].auth.proxy;
-    try std.testing.expectEqualStrings("127.0.0.1:{port}", bedrock.argv[2]);
-    try std.testing.expectEqualStrings("acme-bedrock", bedrock.env.map.get("AWS_PROFILE").?);
+    const proxy = manifest.gateway.?.auth.proxy;
+    try std.testing.expectEqualStrings("127.0.0.1:{port}", proxy.argv[2]);
+    try std.testing.expectEqualStrings("acme-bedrock", proxy.env.map.get("AWS_PROFILE").?);
+}
 
-    const openai = manifest.gateways[1].auth.header;
-    try std.testing.expectEqualStrings("OPENAI_API_KEY", openai.env);
-    try std.testing.expectEqualStrings("Bearer ", openai.prefix);
+test "parses a gateway with a header and defaults its prefix" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
 
-    try std.testing.expectEqualStrings("", manifest.gateways[2].auth.header.prefix);
+    const manifest = try parse(arena_state.allocator(),
+        \\{"preset":{"name":"claude","binary":"claude","profile":{}},
+        \\ "gateway":{"name":"anthropic","upstream":"https://api.anthropic.com",
+        \\   "auth":{"header":{"name":"x-api-key","env":"ANTHROPIC_API_KEY"}}}}
+    );
+
+    const header = manifest.gateway.?.auth.header;
+    try std.testing.expectEqualStrings("ANTHROPIC_API_KEY", header.env);
+    try std.testing.expectEqualStrings("", header.prefix);
 }
 
 test "rejects an unknown auth kind" {
@@ -86,7 +90,7 @@ test "rejects an unknown auth kind" {
 
     try std.testing.expectError(error.UnknownField, parse(arena_state.allocator(),
         \\{"preset":{"name":"claude","binary":"claude","profile":{}},
-        \\ "gateways":[{"name":"x","upstream":"https://x","auth":{"token":{"value":"sk-x"}}}]}
+        \\ "gateway":{"name":"x","upstream":"https://x","auth":{"token":{"value":"sk-x"}}}}
     ));
 }
 

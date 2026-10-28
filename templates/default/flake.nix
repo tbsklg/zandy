@@ -17,7 +17,7 @@
           name = "claude";
           preset = zandy.presets.claude;
           packages = [ pkgs.ripgrep ];
-          gateways = [ (zandy.gateways.bedrock { profile = "acme-bedrock"; region = "eu-west-1"; }) ];
+          gateway = zandy.gateways.bedrock { profile = "acme-bedrock"; region = "eu-west-1"; };
           adapters = [
             zandy.adapters.gitlab
             (zandy.adapters.aws { profiles = [ "acme-dev" ]; })

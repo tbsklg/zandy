@@ -4,6 +4,7 @@ const sbpl = @import("sbpl.zig");
 const broker = @import("broker.zig");
 const rpc = @import("rpc.zig");
 const registry = @import("registry.zig");
+const gateway = @import("gateway.zig");
 
 const Env = @import("env.zig");
 const SandboxEnv = @import("sandbox_env.zig");
@@ -16,7 +17,19 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     const preset = manifest.preset;
     const bin_dir = sandbox_env.bin;
 
-    const profile_z = try serialize(arena, profile);
+    var running: ?gateway.Running = if (manifest.gateway) |config| gateway.start(arena, io, config, environ) catch |err| {
+        std.debug.print("zandy: gateway '{s}' could not start: {t}\n", .{ config.name, err });
+        return err;
+    } else null;
+    defer if (running) |*r| r.stop(io);
+
+    var gateway_rule: [1]sbpl.Rule = undefined;
+    const gateway_rules: []const sbpl.Rule = if (running) |*r| rules: {
+        gateway_rule[0] = sbpl.Rule.allow(.network_outbound, .{ .remote_tcp = try std.fmt.allocPrint(arena, "localhost:{d}", .{r.port}) });
+        break :rules &gateway_rule;
+    } else &.{};
+
+    const profile_z = try serialize(arena, .{ .version = profile.version, .deny_default = profile.deny_default, .rules = try std.mem.concat(arena, sbpl.Rule, &.{ profile.rules, gateway_rules }) });
     const path = try std.fs.path.joinZ(arena, &.{ bin_dir, preset.binary });
 
     const extra_args = try std.mem.concat(arena, [:0]const u8, &.{ preset.args, user_args });
@@ -54,6 +67,7 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     try sandbox_environ.put("SHELL", try std.fs.path.join(arena, &.{ bin_dir, "bash" }));
     try sandbox_environ.put("BROKER_SOCK", sock_path);
     try sandbox_environ.put("BROKER_TICKET", &ticket);
+    if (running) |r| for (try gateway.environFor(arena, preset.gatewayEnv, r)) |entry| try sandbox_environ.put(entry.name, entry.value);
     const envp = try sandbox_environ.createPosixBlock(arena, .{});
 
     const ctx: rpc.Context = .{ .ticket = &ticket, .registry = .{ .capabilities = try registry.parseAdapters(arena, manifest.adapters) }, .environ = environ };

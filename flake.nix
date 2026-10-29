@@ -3,13 +3,12 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    zig-overlay.url = "github:mitchellh/zig-overlay";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { nixpkgs, zig-overlay, flake-utils, ... }:
+  outputs = { nixpkgs, flake-utils, ... }:
     let
-      lib = import ./nix/lib.nix { inherit zig-overlay; };
+      lib = import ./nix/lib.nix;
     in
     {
       lib = { inherit (lib) mkSandboxEnv; };
@@ -24,6 +23,12 @@
         aws = import ./nix/adapters/aws.nix;
       };
 
+      gateways = {
+        bedrock = import ./nix/gateways/bedrock.nix;
+        anthropic = import ./nix/gateways/anthropic.nix;
+        openai = import ./nix/gateways/openai.nix;
+      };
+
       templates.default = {
         path = ./templates/default;
         description = "A zandy sandbox env: run with `nix run`, install with `nix profile add`";
@@ -35,8 +40,7 @@
           inherit system;
           config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [ "claude-code" ];
         };
-        zig = zig-overlay.packages.${system}."0.16.0";
-        inherit (lib.zandyFor pkgs) zandy zandy-client;
+        inherit (lib.zandyFor pkgs) zig zandy zandy-client tests;
       in
       {
         packages = {
@@ -50,13 +54,15 @@
             name = "demo";
             preset = import ./nix/presets/claude.nix;
             packages = [ pkgs.ripgrep ];
-            backend.bedrock = { profile = "acme-bedrock"; region = "eu-west-1"; };
+            gateway = import ./nix/gateways/bedrock.nix { profile = "acme-bedrock"; region = "eu-west-1"; };
             adapters = [
               (import ./nix/adapters/gitlab.nix)
               (import ./nix/adapters/aws.nix { profiles = [ "acme-dev" ]; })
             ];
           };
         };
+
+        checks = { inherit tests; };
 
         devShells.default = pkgs.mkShell {
           packages = [ zig ];

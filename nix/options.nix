@@ -23,8 +23,8 @@ in
           binary = mkOption { type = types.str; description = "Binary in `sandbox/bin` to execute."; };
           packages = mkOption { type = types.functionTo (types.listOf types.package); description = "Packages the app needs, given `pkgs`."; };
           env = mkOption { type = types.listOf types.str; default = [ ]; description = "Names of the environment variables passed into the sandbox."; };
-          settings = mkOption { type = types.functionTo types.raw; default = _: null; description = "App settings, given `backend`."; };
-          args = mkOption { type = types.functionTo (types.listOf types.str); default = _: [ ]; description = "Startup args, given `{ settings }`."; };
+          args = mkOption { type = types.listOf types.str; default = [ ]; description = "Startup args."; };
+          gatewayEnv = mkOption { type = types.attrsOf (types.either (types.attrsOf types.str) (types.functionTo (types.attrsOf types.str))); default = { }; description = "Env vars the app gets per gateway name, or a function of the gateway; `{url}` becomes the gateway's address."; };
           rules = mkOption { type = types.listOf types.attrs; description = "SBPL rules the app needs."; };
         };
       };
@@ -44,17 +44,13 @@ in
       example = lib.literalExpression ''[ zandy.adapters.gitlab (zandy.adapters.aws { profiles = [ "acme-dev" ]; }) ]'';
     };
 
-    backend.bedrock = mkOption {
-      type = types.nullOr (types.submodule {
-        options = {
-          profile = mkOption { type = types.str; description = "AWS profile the broker exports Bedrock credentials from."; };
-          region = mkOption { type = types.str; description = "AWS region of Bedrock."; };
-        };
-      });
+    gateway = mkOption {
+      type = types.nullOr (types.functionTo types.attrs);
       default = null;
-      description = "Run the model through Amazon Bedrock; the credentials come from the broker.";
-      example = { profile = "acme-bedrock"; region = "eu-west-1"; };
+      description = "The model backend the broker forwards to, adding auth outside the sandbox.";
+      example = lib.literalExpression ''zandy.gateways.bedrock { profile = "acme-bedrock"; region = "eu-west-1"; }'';
     };
+
 
     filesystem = {
       allowRead = paths "Extra paths the agent may read.";

@@ -1,12 +1,14 @@
 const std = @import("std");
 const sbpl = @import("sbpl.zig");
 const registry = @import("registry.zig");
+const gateway = @import("gateway.zig");
 
 pub const Preset = struct {
     name: []const u8,
     binary: [:0]const u8,
     env: []const []const u8 = &.{},
     args: []const [:0]const u8 = &.{},
+    gatewayEnv: []const gateway.Env = &.{},
     profile: sbpl.Profile,
 };
 
@@ -20,6 +22,7 @@ pub const FileSystem = struct {
 pub const Manifest = struct {
     preset: Preset,
     adapters: []const registry.Adapter = &.{},
+    gateway: ?gateway.Gateway = null,
     filesystem: FileSystem = .{},
 };
 
@@ -47,6 +50,45 @@ test "parses a manifest and defaults filesystem" {
     try std.testing.expectEqual(null, manifest.preset.profile.rules[1].filter);
     try std.testing.expectEqualStrings("gitlab", manifest.adapters[0].name);
     try std.testing.expectEqual(0, manifest.filesystem.allowWrite.len);
+    try std.testing.expectEqual(null, manifest.gateway);
+}
+
+test "parses a gateway with its command and env" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const manifest = try parse(arena_state.allocator(),
+        \\{"preset":{"name":"claude","binary":"claude","profile":{}},
+        \\ "gateway":{"name":"bedrock",
+        \\   "argv":["/nix/store/lw5h7x6kxqdx6m8wnsqjjzj6fd1i9x2j-aws-sigv4-proxy-1.13/bin/aws-sigv4-proxy","--port","127.0.0.1:{port}"],
+        \\   "env":{"AWS_PROFILE":"acme-bedrock"}}}
+    );
+
+    const bedrock = manifest.gateway.?;
+    try std.testing.expectEqualStrings("127.0.0.1:{port}", bedrock.argv[2]);
+    try std.testing.expectEqualStrings("acme-bedrock", bedrock.env.map.get("AWS_PROFILE").?);
+}
+
+test "a gateway without env gets an empty one" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const manifest = try parse(arena_state.allocator(),
+        \\{"preset":{"name":"claude","binary":"claude","profile":{}},
+        \\ "gateway":{"name":"anthropic","argv":["/nix/store/lw5h7x6kxqdx6m8wnsqjjzj6fd1i9x2j-caddy-2.11.7/bin/caddy","run"]}}
+    );
+
+    try std.testing.expectEqual(0, manifest.gateway.?.env.map.count());
+}
+
+test "rejects a gateway with a secret inline" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    try std.testing.expectError(error.UnknownField, parse(arena_state.allocator(),
+        \\{"preset":{"name":"claude","binary":"claude","profile":{}},
+        \\ "gateway":{"name":"x","argv":[],"apiKey":"sk-x"}}
+    ));
 }
 
 test "rejects unknown fields" {

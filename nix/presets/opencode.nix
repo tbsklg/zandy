@@ -4,9 +4,7 @@
   packages = pkgs: [ pkgs.opencode pkgs.bash pkgs.coreutils pkgs.git ];
   env = [ "HOME" "TMPDIR" "USER" "TERM" "COLORTERM" "LANG" "LC_ALL" ];
 
-  settings = _: null;
-
-  args = _: [ ];
+  args = [ ];
 
   rules = [
     { action = "allow"; operation = "process_fork"; }

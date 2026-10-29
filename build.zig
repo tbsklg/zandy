@@ -27,8 +27,10 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
+    addOsLog(b, exe.root_module);
 
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default
@@ -104,8 +106,15 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
+    addOsLog(b, exe_check.root_module);
     const check = b.step("check", "Check if zandy compiles");
     check.dependOn(&exe_check.step);
+}
+
+fn addOsLog(b: *std.Build, module: *std.Build.Module) void {
+    if (b.sysroot) |sdk| module.addSystemIncludePath(.{ .cwd_relative = b.pathJoin(&.{ sdk, "usr/include" }) });
+    module.addCSourceFile(.{ .file = b.path("src/os_log.c") });
 }

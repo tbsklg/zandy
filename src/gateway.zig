@@ -1,6 +1,8 @@
 const std = @import("std");
 const secret = @import("secret.zig");
 
+const log = std.log.scoped(.gateway);
+
 pub const Gateway = struct {
     name: []const u8,
     argv: []const []const u8,
@@ -23,6 +25,7 @@ pub const Running = struct {
 
     pub fn stop(self: *Running, io: std.Io) void {
         self.child.kill(io);
+        log.info("{s} stopped", .{self.name});
     }
 };
 
@@ -51,6 +54,7 @@ pub fn start(arena: std.mem.Allocator, io: std.Io, gateway: Gateway, environ: *c
     });
     errdefer child.kill(io);
     try waitUntilListening(io, port);
+    log.info("{s} listening on 127.0.0.1:{d}", .{ gateway.name, port });
 
     return .{
         .name = gateway.name,

@@ -10,6 +10,7 @@ let
       fileset = pkgs.lib.fileset.unions [ ../build.zig ../build.zig.zon ../src ];
     };
     nativeBuildInputs = [ zig.hook pkgs.removeReferencesTo ];
+    zigBuildFlags = [ "--sysroot" pkgs.apple-sdk.sdkroot ];
     postFixup = ''
       remove-references-to -t ${zig} $out/bin/*
     '';

@@ -2,6 +2,8 @@ const std = @import("std");
 const registry_mod = @import("registry.zig");
 const command = @import("command.zig");
 
+const log = std.log.scoped(.broker);
+
 pub const ticket_len = 64;
 
 /// Everything a request is checked and answered against, for one broker session.
@@ -44,7 +46,11 @@ fn dispatch(arena: std.mem.Allocator, io: std.Io, ctx: *const Context, obj: std.
     if (given != .object) return error.InvalidParams;
     const args = try command.parseParams(arena, cap.params, given.object);
 
-    return switch (command.run(arena, io, cap, args, ctx.environ) catch return error.CommandNotStarted) {
+    const started = std.Io.Clock.awake.now(io);
+    const outcome = command.run(arena, io, cap, args, ctx.environ) catch return error.CommandNotStarted;
+    log.info("{s} {s} {d}ms", .{ method.string, @tagName(outcome), started.untilNow(io, .awake).toMilliseconds() });
+
+    return switch (outcome) {
         .success => |stdout| .{ .success = try std.fmt.allocPrint(arena, "{f}", .{std.json.fmt(stdout, .{})}) },
         .failure => |stderr| .{ .failure = stderr },
     };

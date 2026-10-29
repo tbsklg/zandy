@@ -16,4 +16,5 @@ test {
     _ = @import("store.zig");
     _ = @import("manifest.zig");
     _ = @import("sandbox_env.zig");
+    _ = @import("log.zig");
 }

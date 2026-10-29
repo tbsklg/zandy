@@ -207,7 +207,7 @@ pub const Rule = struct {
         return .{ .action = .deny, .operation = operation, .filter = filter };
     }
 
-    pub fn write(self: Rule, writer: anytype) !void {
+    pub fn write(self: Rule, writer: anytype, message: ?[]const u8) !void {
         try writer.writeAll("(");
         try writer.writeAll(@tagName(self.action));
         try writer.writeAll(" ");
@@ -216,9 +216,14 @@ pub const Rule = struct {
             try writer.writeAll(" ");
             try f.write(writer);
         }
+        if (self.action == .deny) try writeMessage(writer, message);
         try writer.writeAll(")");
     }
 };
+
+fn writeMessage(writer: anytype, message: ?[]const u8) !void {
+    if (message) |m| try writer.print(" (with message \"{s}\")", .{m});
+}
 
 test "write rule" {
     const allocator = std.testing.allocator;
@@ -231,12 +236,12 @@ test "write rule" {
         .operation = .file_read_all,
         .filter = .{ .subpath = .{ .param_append = .{ .param = "CWD", .suffix = "/a/b/c" } } },
     };
-    try rule.write(w);
+    try rule.write(w, null);
     try std.testing.expectEqualStrings("(allow file-read* (subpath (string-append (param \"CWD\") \"/a/b/c\")))", aw.written());
 
     aw.clearRetainingCapacity();
 
-    try (Rule{ .action = .allow, .operation = .process_exec }).write(w);
+    try (Rule{ .action = .allow, .operation = .process_exec }).write(w, null);
     try std.testing.expectEqualStrings("(allow process-exec)", aw.written());
 }
 
@@ -244,19 +249,22 @@ pub const Profile = struct {
     version: []const u8 = "1",
     deny_default: bool = true,
     rules: []const Rule = &.{},
+    message: ?[]const u8 = null,
 
     pub fn write(self: Profile, writer: anytype) !void {
         try writer.print("(version {s})\n", .{self.version});
 
         if (self.deny_default) {
-            try writer.writeAll("(deny default)");
+            try writer.writeAll("(deny default");
+            try writeMessage(writer, self.message);
+            try writer.writeAll(")");
         } else {
             try writer.writeAll("(allow default)");
         }
 
         for (self.rules) |r| {
             try writer.writeAll("\n");
-            try r.write(writer);
+            try r.write(writer, self.message);
         }
     }
 };
@@ -301,6 +309,29 @@ test "write profile multiple rules" {
         \\(deny default)
         \\(allow process-exec)
         \\(allow process-fork)
+    ;
+    try std.testing.expectEqualStrings(expected, aw.written());
+}
+
+test "write profile tags every denial with the message" {
+    const allocator = std.testing.allocator;
+    var aw = std.Io.Writer.Allocating.init(allocator);
+    defer aw.deinit();
+
+    const profile = Profile{
+        .message = "zandy-42",
+        .rules = &.{
+            Rule.allow(.process_exec, null),
+            Rule.deny(.mach_lookup, .{ .global_name = "com.apple.SecurityServer" }),
+        },
+    };
+    try profile.write(&aw.writer);
+
+    const expected =
+        \\(version 1)
+        \\(deny default (with message "zandy-42"))
+        \\(allow process-exec)
+        \\(deny mach-lookup (global-name "com.apple.SecurityServer") (with message "zandy-42"))
     ;
     try std.testing.expectEqualStrings(expected, aw.written());
 }

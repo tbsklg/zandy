@@ -4,9 +4,15 @@ const launch_mod = @import("launch.zig");
 const registry_mod = @import("registry.zig");
 const cli = @import("cli.zig");
 const secret = @import("secret.zig");
+const log = @import("log.zig");
 
 const Env = @import("env.zig");
 const SandboxEnv = @import("sandbox_env.zig");
+
+pub const std_options: std.Options = .{
+    .log_level = .debug,
+    .logFn = log.logFn,
+};
 
 pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();

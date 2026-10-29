@@ -2,6 +2,10 @@
 
 A macOS sandbox launcher with builtin profiles for well-known apps, built around Nix.
 
+## Platform
+
+macOS on Apple Silicon only, by design. zandy is built on Seatbelt and the macOS keychain; there is no support for Intel Macs, Linux or Windows, and none is planned.
+
 ## API
 
 ```
@@ -64,7 +68,8 @@ agent ── HTTP ──▶ gateway (127.0.0.1:<port>, outside) ── HTTPS + a
 ```
 
 - **zandy speaks no HTTP.** The proxy is a ready-made program: Caddy for Anthropic and OpenAI, `aws-sigv4-proxy` for Bedrock. zandy picks a free port, passes it as `ZANDY_GATEWAY_PORT` and `{port}` in `argv`, starts the process, waits until it listens and stops it at the end.
-- **Declared in Nix.** A gateway is `{ name; argv; env; }` in the manifest. Caddy's config is a Nix attrset written as JSON: admin API off, errors-only logs, the auth header set from `{env.KEY}` at request time, the sandbox's own credential headers deleted.
+- **Declared in Nix.** A gateway is `{ name; argv; env; secrets; }` in the manifest. Caddy's config is a Nix attrset written as JSON: admin API off, errors-only logs, the auth header set from `{env.KEY}` at request time, the sandbox's own credential headers deleted.
+- **Secrets are sources, not values.** `secrets` maps an env var to where its value lives, e.g. `keychain = { service; field; }`: zandy reads the item with `/usr/bin/security` at launch, follows `field` into its JSON and passes the value to the proxy only. The manifest names the item, never its contents.
 - **One upstream, one port.** The sandbox may connect to the gateway's port and no other localhost port; the proxy, not the agent, decides the host.
 - **The credential sets the scope.** As for adapters, zandy doesn't judge requests; the key's or IAM role's permissions do.
 - **One gateway at a time.** A preset's `gatewayEnv` maps each gateway name to the env vars its app needs, with `{url}` filled in at launch.

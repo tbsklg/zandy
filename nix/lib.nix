@@ -43,7 +43,7 @@ let
             env = adapter.env or [ ];
           })
           resolvedAdapters;
-        gateway = if gateway == null then null else { inherit (gateway) name argv; env = gateway.env or { }; };
+        gateway = if gateway == null then null else { inherit (gateway) name argv; env = gateway.env or { }; secrets = gateway.secrets or { }; };
         inherit (cfg) filesystem;
       };
 
@@ -58,6 +58,8 @@ let
         text = ''exec ${zandy}/bin/zandy --env ${env} "$@"'';
       };
     in
+    assert lib.assertMsg pkgs.stdenv.hostPlatform.isDarwin
+      "zandy: macOS only, ${pkgs.stdenv.hostPlatform.system} is not supported";
     assert lib.assertMsg (clashes == [ ])
       "zandy: ${lib.concatMapStringsSep ", " (adapter: adapter.name) clashes} adapter packages must not be in packages; the broker runs them outside the sandbox";
     pkgs.symlinkJoin {

@@ -14,6 +14,7 @@ let
       remove-references-to -t ${zig} $out/bin/*
     '';
     disallowedReferences = [ zig ];
+    meta.platforms = [ "aarch64-darwin" ];
   };
 
   tests = zandy.overrideAttrs {

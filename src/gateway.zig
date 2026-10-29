@@ -1,9 +1,19 @@
 const std = @import("std");
 
+pub const Keychain = struct {
+    service: []const u8,
+    field: []const []const u8 = &.{},
+};
+
+pub const Secret = union(enum) {
+    keychain: Keychain,
+};
+
 pub const Gateway = struct {
     name: []const u8,
     argv: []const []const u8,
     env: std.json.ArrayHashMap([]const u8) = .{},
+    secrets: std.json.ArrayHashMap(Secret) = .{},
 };
 
 pub const Env = struct {
@@ -30,6 +40,8 @@ pub fn start(arena: std.mem.Allocator, io: std.Io, gateway: Gateway, environ: *c
     var child_environ = try environ.clone(arena);
     var it = gateway.env.map.iterator();
     while (it.next()) |entry| try child_environ.put(entry.key_ptr.*, entry.value_ptr.*);
+    var secrets = gateway.secrets.map.iterator();
+    while (secrets.next()) |entry| try child_environ.put(entry.key_ptr.*, try readSecret(arena, io, entry.value_ptr.*));
     try child_environ.put("ZANDY_GATEWAY_PORT", port_text);
 
     var child = try std.process.spawn(io, .{
@@ -56,6 +68,33 @@ pub fn environFor(arena: std.mem.Allocator, entries: []const Env, running: Runni
         try vars.append(arena, .{ .name = entry.name, .value = try std.mem.replaceOwned(u8, arena, entry.value, "{url}", running.url) });
     }
     return vars.items;
+}
+
+fn readSecret(arena: std.mem.Allocator, io: std.Io, secret: Secret) ![]const u8 {
+    return switch (secret) {
+        .keychain => |keychain| readKeychain(arena, io, keychain),
+    };
+}
+
+fn readKeychain(arena: std.mem.Allocator, io: std.Io, keychain: Keychain) ![]const u8 {
+    const result = try std.process.run(arena, io, .{ .argv = &.{ "/usr/bin/security", "find-generic-password", "-s", keychain.service, "-w" } });
+    switch (result.term) {
+        .exited => |code| if (code != 0) return error.NoKeychainItem,
+        else => return error.NoKeychainItem,
+    }
+    const value = std.mem.trimEnd(u8, result.stdout, "\n");
+    if (keychain.field.len == 0) return value;
+    return jsonField(arena, value, keychain.field);
+}
+
+fn jsonField(arena: std.mem.Allocator, json: []const u8, path: []const []const u8) ![]const u8 {
+    var value = std.json.parseFromSliceLeaky(std.json.Value, arena, json, .{}) catch return error.NoKeychainField;
+    for (path) |name| {
+        if (value != .object) return error.NoKeychainField;
+        value = value.object.get(name) orelse return error.NoKeychainField;
+    }
+    if (value != .string) return error.NoKeychainField;
+    return value.string;
 }
 
 fn freePort(io: std.Io) !u16 {
@@ -106,4 +145,34 @@ test "environFor fills in the url of the running gateway" {
     try std.testing.expectEqual(2, vars.len);
     try std.testing.expectEqualStrings("http://127.0.0.1:4711", vars[0].value);
     try std.testing.expectEqualStrings("zandy-gateway", vars[1].value);
+}
+
+test "parses keychain secrets of a gateway" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const gateway = try std.json.parseFromSliceLeaky(Gateway, arena_state.allocator(),
+        \\{"name":"anthropic","argv":["caddy"],"secrets":{"ZANDY_GATEWAY_TOKEN":{"keychain":{"service":"Claude Code-credentials","field":["claudeAiOauth","accessToken"]}}}}
+    , .{});
+    const keychain = gateway.secrets.map.get("ZANDY_GATEWAY_TOKEN").?.keychain;
+    try std.testing.expectEqualStrings("Claude Code-credentials", keychain.service);
+    try std.testing.expectEqualStrings("accessToken", keychain.field[1]);
+}
+
+test "jsonField follows the path to a string" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+
+    const token = try jsonField(arena_state.allocator(), "{\"claudeAiOauth\":{\"accessToken\":\"sk-ant-oat\"}}", &.{ "claudeAiOauth", "accessToken" });
+    try std.testing.expectEqualStrings("sk-ant-oat", token);
+}
+
+test "jsonField rejects a missing field and a non-string value" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    try std.testing.expectError(error.NoKeychainField, jsonField(arena, "{\"claudeAiOauth\":{}}", &.{ "claudeAiOauth", "accessToken" }));
+    try std.testing.expectError(error.NoKeychainField, jsonField(arena, "{\"claudeAiOauth\":{\"accessToken\":1}}", &.{ "claudeAiOauth", "accessToken" }));
+    try std.testing.expectError(error.NoKeychainField, jsonField(arena, "not json", &.{"claudeAiOauth"}));
 }

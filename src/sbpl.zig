@@ -108,11 +108,16 @@ test "write expr" {
     try std.testing.expectEqualStrings("(string-append (param \"CWD\") \"a/b/c\")", aw.written());
 }
 
+/// /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/sys/socket.h
+pub const SocketDomain = enum(u32) {
+    af_system = 32,
+};
+
 pub const Filter = union(enum) {
     subpath: Expr,
     literal: Expr,
     global_name: []const u8,
-    socket_domain: u32,
+    socket_domain: SocketDomain,
     target: []const u8,
     remote_tcp: []const u8,
     remote_unix_socket: Expr,
@@ -141,7 +146,7 @@ pub const Filter = union(enum) {
                 try writer.print("(global-name \"{s}\")", .{name});
             },
             .socket_domain => |domain| {
-                try writer.print("(socket-domain {d})", .{domain});
+                try writer.print("(socket-domain {d})", .{@intFromEnum(domain)});
             },
             .target => |t| {
                 try writer.print("(target {s})", .{t});
@@ -176,7 +181,7 @@ test "write filter" {
 
     aw.clearRetainingCapacity();
 
-    try (Filter{ .socket_domain = 32 }).write(w);
+    try (Filter{ .socket_domain = .af_system }).write(w);
     try std.testing.expectEqualStrings("(socket-domain 32)", aw.written());
 
     aw.clearRetainingCapacity();

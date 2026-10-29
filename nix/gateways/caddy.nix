@@ -1,4 +1,4 @@
-{ name, host, headers }: pkgs:
+{ name, host, headers, addHeaders ? { } }: pkgs:
 let
   config = pkgs.writeText "${name}-gateway.json" (builtins.toJSON {
     admin.disabled = true;
@@ -13,6 +13,7 @@ let
           transport = { protocol = "http"; tls = { }; };
           headers.request = {
             set = { Host = [ host ]; } // headers;
+            add = addHeaders;
             delete = pkgs.lib.subtractLists (builtins.attrNames headers) [ "Authorization" "X-Api-Key" ];
           };
         }];

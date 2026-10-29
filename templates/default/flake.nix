@@ -4,7 +4,7 @@
 
   outputs = { zandy, nixpkgs, ... }:
     let
-      systems = [ "aarch64-darwin" "x86_64-darwin" ];
+      systems = [ "aarch64-darwin" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f (import nixpkgs {
         inherit system;
         config.allowUnfreePredicate = pkg: nixpkgs.lib.getName pkg == "claude-code";

@@ -15,7 +15,7 @@
     { action = "allow"; operation = "network_outbound"; filter = { remote_tcp = "*:443"; }; }
     { action = "allow"; operation = "network_outbound"; filter = { remote_unix_socket = { literal = "/private/var/run/mDNSResponder"; }; }; }
     { action = "allow"; operation = "network_outbound"; filter = { remote_unix_socket = { param = "BROKER_SOCK"; }; }; }
-    { action = "allow"; operation = "system_socket"; filter = { socket_domain = 32; }; }
+    { action = "allow"; operation = "system_socket"; filter = { socket_domain = "af_system"; }; }
     { action = "allow"; operation = "ipc_posix_shm_read_data"; }
     { action = "allow"; operation = "ipc_posix_shm_write_create"; }
     { action = "allow"; operation = "mach_lookup"; filter = { global_name = "com.apple.SecurityServer"; }; }

@@ -5,6 +5,7 @@ test {
     _ = @import("cli.zig");
     _ = @import("launch.zig");
     _ = @import("env.zig");
+    _ = @import("macos.zig");
     _ = @import("broker.zig");
     _ = @import("gateway.zig");
     _ = @import("rpc.zig");

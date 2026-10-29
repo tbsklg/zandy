@@ -51,7 +51,7 @@
           packages = [ pkgs.ripgrep ];
           gateway = import ./nix/gateways/bedrock.nix { profile = "acme-bedrock"; region = "eu-west-1"; };
           adapters = [
-            (import ./nix/adapters/gitlab.nix)
+            (import ./nix/adapters/gitlab.nix { })
             (import ./nix/adapters/aws.nix { profiles = [ "acme-dev" ]; })
           ];
         };

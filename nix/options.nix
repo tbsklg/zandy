@@ -41,7 +41,7 @@ in
       type = types.listOf (types.functionTo types.attrs);
       default = [ ];
       description = "Tools the broker runs outside the sandbox on the agent's behalf. Their packages must not be in `packages`.";
-      example = lib.literalExpression ''[ zandy.adapters.gitlab (zandy.adapters.aws { profiles = [ "acme-dev" ]; }) ]'';
+      example = lib.literalExpression ''[ (zandy.adapters.gitlab { }) (zandy.adapters.aws { profiles = [ "acme-dev" ]; }) ]'';
     };
 
     gateway = mkOption {

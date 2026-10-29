@@ -3,6 +3,7 @@ const profile_mod = @import("profile.zig");
 const launch_mod = @import("launch.zig");
 const registry_mod = @import("registry.zig");
 const cli = @import("cli.zig");
+const secret = @import("secret.zig");
 
 const Env = @import("env.zig");
 const SandboxEnv = @import("sandbox_env.zig");
@@ -27,6 +28,7 @@ pub fn main(init: std.process.Init) !void {
     const env_path = switch (command) {
         .launch => |launch| launch.env,
         .config => |env_path| env_path,
+        .secret => |service| return storeSecret(arena, io, envMap, service),
     };
     const sandbox_env = SandboxEnv.load(arena, io, env_path) catch |err| {
         std.debug.print("zandy: --env '{s}' is not a sandbox env built by zandy.lib.mkSandboxEnv: {t}\n", .{ env_path, err });
@@ -36,6 +38,7 @@ pub fn main(init: std.process.Init) !void {
     const launch = switch (command) {
         .launch => |launch| launch,
         .config => return showConfig(arena, io, sandbox_env),
+        .secret => unreachable,
     };
 
     const env = try Env.init(arena, io, envMap);
@@ -44,9 +47,20 @@ pub fn main(init: std.process.Init) !void {
     try launch_mod.launch(init, sandbox_env, launch.args, profile, env);
 }
 
+fn storeSecret(arena: std.mem.Allocator, io: std.Io, envMap: *std.process.Environ.Map, service: []const u8) !void {
+    const home = envMap.get("HOME") orelse return error.NoHome;
+    secret.set(arena, io, home, service) catch |err| {
+        std.debug.print("zandy: could not store '{s}': {t}\n", .{ service, err });
+        std.process.exit(1);
+    };
+    std.debug.print("zandy: stored '{s}' in {s}\n", .{ service, try secret.keychainPath(arena, home, .zandy) });
+}
+
 fn showConfig(arena: std.mem.Allocator, io: std.Io, sandbox_env: SandboxEnv) !void {
     const manifest = sandbox_env.manifest;
-    const registry: registry_mod.Registry = .{ .capabilities = try registry_mod.parseAdapters(arena, manifest.adapters) };
+    const no_pipes = try arena.alloc([]const secret.Pipe, manifest.adapters.len);
+    @memset(no_pipes, &.{});
+    const registry: registry_mod.Registry = .{ .capabilities = try registry_mod.parseAdapters(arena, manifest.adapters, no_pipes, "~/.zandy/run/<pid>") };
     const discovered = try std.json.parseFromSliceLeaky(std.json.Value, arena, try registry.discover(arena), .{});
 
     var buf: [4096]u8 = undefined;

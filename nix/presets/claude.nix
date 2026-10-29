@@ -48,8 +48,6 @@ in
     { action = "allow"; operation = "mach_lookup"; filter = { global_name = "com.apple.system.notification_center"; }; }
     { action = "allow"; operation = "mach_lookup"; filter = { global_name = "com.apple.system.opendirectoryd.libinfo"; }; }
     { action = "allow"; operation = "mach_lookup"; filter = { global_name = "com.apple.system.opendirectoryd.membership"; }; }
-    { action = "allow"; operation = "mach_lookup"; filter = { global_name = "com.apple.SecurityServer"; }; }
-    { action = "allow"; operation = "mach_lookup"; filter = { global_name = "com.apple.securityd.xpc"; }; }
     # https://github.com/anthropics/claude-code/issues/34876
     { action = "allow"; operation = "mach_lookup"; filter = { global_name = "com.apple.trustd"; }; }
     { action = "allow"; operation = "file_all"; filter = { subpath = { param_append = { param = "HOME"; suffix = "/.claude"; }; }; }; }

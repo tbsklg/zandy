@@ -35,12 +35,8 @@ pub fn createSocketDir(io: std.Io, path: []const u8) !void {
     try std.Io.Dir.createDirAbsolute(io, path, .fromMode(0o700));
 }
 
-pub fn removeSocketDir(io: std.Io, path: []const u8) !void {
-    var sock_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const sock_path = try std.fmt.bufPrint(&sock_buf, "{s}/broker.sock", .{path});
-
-    try std.Io.Dir.deleteFileAbsolute(io, sock_path);
-    try std.Io.Dir.deleteDirAbsolute(io, path);
+pub fn removeSessionDir(io: std.Io, path: []const u8) !void {
+    try std.Io.Dir.cwd().deleteTree(io, path);
 }
 
 fn readLine(reader: *std.Io.Reader) ![]u8 {
@@ -378,7 +374,7 @@ test "serve ignores a client that sends nothing" {
     try std.testing.expectEqual(0, std.c.W.EXITSTATUS(@bitCast(status)));
 }
 
-test "removeSocketDir deletes the socket and its dir" {
+test "removeSessionDir deletes the socket, the private dirs and the session dir" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -393,8 +389,10 @@ test "removeSocketDir deletes the socket and its dir" {
     const sock_path = try std.fmt.bufPrint(&sock_buf, "{s}/broker.sock", .{dir_path});
     var server = try listen(std.testing.io, sock_path);
     server.deinit(std.testing.io);
+    try tmp.dir.createDir(std.testing.io, "run/gateway", .fromMode(0o700));
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "run/gateway/secrets.env", .data = "TOKEN=x\n" });
 
-    try removeSocketDir(std.testing.io, dir_path);
+    try removeSessionDir(std.testing.io, dir_path);
 
     try std.testing.expectError(error.FileNotFound, tmp.dir.statFile(std.testing.io, "run", .{}));
 }

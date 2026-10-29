@@ -8,7 +8,7 @@ const Rule = sbpl.Rule;
 
 pub fn buildProfile(arena: std.mem.Allocator, base: sbpl.Profile, env: Env, fs: FileSystem, store_paths: []const store.StorePath) !sbpl.Profile {
     const fs_rules = try buildFilesystemRules(arena, env, fs);
-    const rules = try std.mem.concat(arena, sbpl.Rule, &.{ base.rules, try storeRules(arena, store_paths), fs_rules, &protected_rules });
+    const rules = try std.mem.concat(arena, sbpl.Rule, &.{ base.rules, try storeRules(arena, store_paths), fs_rules, &protected_rules, &secret_rules });
     return .{ .version = base.version, .deny_default = base.deny_default, .rules = rules };
 }
 
@@ -30,6 +30,18 @@ const protected_rules = blk: {
         }
     }
     break :blk rules;
+};
+
+const zandy_dir: sbpl.Filter = .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/.zandy" } } };
+const keychains_dir: sbpl.Filter = .{ .subpath = .{ .param_append = .{ .param = "HOME", .suffix = "/Library/Keychains" } } };
+
+const secret_rules = [_]Rule{
+    Rule.deny(.file_read_data, zandy_dir),
+    Rule.deny(.file_write_all, zandy_dir),
+    Rule.deny(.file_read_data, keychains_dir),
+    Rule.deny(.file_write_all, keychains_dir),
+    Rule.deny(.mach_lookup, .{ .global_name = "com.apple.SecurityServer" }),
+    Rule.deny(.mach_lookup, .{ .global_name = "com.apple.securityd.xpc" }),
 };
 
 fn storeRules(arena: std.mem.Allocator, store_paths: []const store.StorePath) ![]Rule {
@@ -138,4 +150,42 @@ test "files that define the sandbox or run outside it stay read-only even when t
     try std.testing.expect(allow < deny_flake);
     try std.testing.expect(allow < deny_hooks);
     try std.testing.expect(std.mem.indexOf(u8, written, "(deny file-write-create (subpath (string-append (param \"CWD\") \"/.git/hooks\")))") != null);
+}
+
+test "zandy's secrets and the keychain stay closed even when the user allows reading HOME" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const allowRead = [_][]const u8{"~/"};
+    const profile = try buildProfile(arena, .{ .rules = &.{} }, .{ .home = "/Users/acme", .cwd = "/Users/acme/widgets", .tmpdir = "/private/tmp" }, .{ .allowRead = &allowRead }, &.{});
+
+    var aw = std.Io.Writer.Allocating.init(arena);
+    try profile.write(&aw.writer);
+    const written = aw.written();
+
+    const allow = std.mem.indexOf(u8, written, "(allow file-read* (subpath \"/Users/acme\"))").?;
+    const deny_zandy = std.mem.indexOf(u8, written, "(deny file-read-data (subpath (string-append (param \"HOME\") \"/.zandy\")))").?;
+    const deny_keychains = std.mem.indexOf(u8, written, "(deny file-read-data (subpath (string-append (param \"HOME\") \"/Library/Keychains\")))").?;
+    try std.testing.expect(allow < deny_zandy);
+    try std.testing.expect(allow < deny_keychains);
+    try std.testing.expect(std.mem.indexOf(u8, written, "(deny file-write* (subpath (string-append (param \"HOME\") \"/.zandy\")))") != null);
+}
+
+test "a preset can't open the keychain services" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const base = [_]Rule{Rule.allow(.mach_lookup, .{ .global_name = "com.apple.SecurityServer" })};
+    const profile = try buildProfile(arena, .{ .rules = &base }, .{ .home = "/Users/acme", .cwd = "/Users/acme/widgets", .tmpdir = "/private/tmp" }, .{}, &.{});
+
+    var aw = std.Io.Writer.Allocating.init(arena);
+    try profile.write(&aw.writer);
+    const written = aw.written();
+
+    const allow = std.mem.indexOf(u8, written, "(allow mach-lookup (global-name \"com.apple.SecurityServer\"))").?;
+    const deny = std.mem.indexOf(u8, written, "(deny mach-lookup (global-name \"com.apple.SecurityServer\"))").?;
+    try std.testing.expect(allow < deny);
+    try std.testing.expect(std.mem.indexOf(u8, written, "(deny mach-lookup (global-name \"com.apple.securityd.xpc\"))") != null);
 }

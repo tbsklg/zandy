@@ -1,5 +1,6 @@
 const std = @import("std");
 const command = @import("command.zig");
+const secret = @import("secret.zig");
 
 pub const Param = struct {
     name: []const u8,
@@ -19,6 +20,9 @@ pub const Adapter = struct {
     name: []const u8,
     binary: []const u8,
     env: []const []const u8 = &.{},
+    setEnv: std.json.ArrayHashMap([]const u8) = .{},
+    secrets: secret.Sources = .{},
+    files: secret.Files = .{},
     capabilities: []const CapabilityConfig,
 };
 
@@ -28,12 +32,15 @@ pub const Capability = struct {
     params: []const Param = &.{},
     binary: []const u8,
     env: []const []const u8 = &.{},
+    set_env: []const std.http.Header = &.{},
     argv: []const command.Segment = &.{},
+    pipes: []const secret.Pipe = &.{},
 };
 
-pub fn parseAdapters(arena: std.mem.Allocator, adapters: []const Adapter) ![]const Capability {
+pub fn parseAdapters(arena: std.mem.Allocator, adapters: []const Adapter, pipes: []const []const secret.Pipe, session_dir: []const u8) ![]const Capability {
     var capabilities: std.ArrayList(Capability) = .empty;
-    for (adapters) |adapter| {
+    for (adapters, pipes) |adapter, adapter_pipes| {
+        const set_env = try setEnvIn(arena, adapter, session_dir);
         next: for (adapter.capabilities) |config| {
             const params = config.params;
             for (params) |param| {
@@ -45,11 +52,26 @@ pub fn parseAdapters(arena: std.mem.Allocator, adapters: []const Adapter) ![]con
                 .params = params,
                 .binary = adapter.binary,
                 .env = adapter.env,
+                .set_env = set_env,
                 .argv = try command.parseTemplate(arena, params, config.argv),
+                .pipes = adapter_pipes,
             });
         }
     }
     return capabilities.items;
+}
+
+pub fn dirFor(arena: std.mem.Allocator, session_dir: []const u8, adapter: Adapter) ![]const u8 {
+    return secret.dirFor(arena, session_dir, try std.fmt.allocPrint(arena, "adapter-{s}", .{adapter.name}));
+}
+
+fn setEnvIn(arena: std.mem.Allocator, adapter: Adapter, session_dir: []const u8) ![]const std.http.Header {
+    const dir = try dirFor(arena, session_dir, adapter);
+    const vars = try arena.alloc(std.http.Header, adapter.setEnv.map.count());
+    for (adapter.setEnv.map.keys(), adapter.setEnv.map.values(), vars) |name, value, *slot| {
+        slot.* = .{ .name = name, .value = try secret.withDir(arena, value, dir) };
+    }
+    return vars;
 }
 
 fn writeSchema(w: *std.Io.Writer, params: []const Param) !void {
@@ -156,7 +178,7 @@ test "parseAdapters prefixes names and parses argv templates" {
         }},
     }};
 
-    const capabilities = try parseAdapters(arena_state.allocator(), &adapters);
+    const capabilities = try parseAdapters(arena_state.allocator(), &adapters, &.{&.{}}, "/run/1");
 
     try std.testing.expectEqual(1, capabilities.len);
     try std.testing.expectEqualStrings("gitlab.issues.list", capabilities[0].name);
@@ -180,7 +202,7 @@ test "parseAdapters rejects a template with an unknown placeholder" {
         }},
     }};
 
-    try std.testing.expectError(error.UnknownPlaceholder, parseAdapters(arena_state.allocator(), &adapters));
+    try std.testing.expectError(error.UnknownPlaceholder, parseAdapters(arena_state.allocator(), &adapters, &.{&.{}}, "/run/1"));
 }
 
 fn awsAdapter(comptime choices: []const []const u8) Adapter {
@@ -201,7 +223,7 @@ test "parseAdapters keeps a choice param's values" {
     defer arena_state.deinit();
 
     const adapters = [_]Adapter{awsAdapter(&.{ "acme-dev", "acme-int" })};
-    const capabilities = try parseAdapters(arena_state.allocator(), &adapters);
+    const capabilities = try parseAdapters(arena_state.allocator(), &adapters, &.{&.{}}, "/run/1");
 
     try std.testing.expectEqualStrings("aws.cli", capabilities[0].name);
     try std.testing.expectEqualStrings("acme-int", capabilities[0].params[0].choices[1]);
@@ -212,7 +234,23 @@ test "parseAdapters drops a capability whose choice param has no values" {
     defer arena_state.deinit();
 
     const adapters = [_]Adapter{awsAdapter(&.{})};
-    const capabilities = try parseAdapters(arena_state.allocator(), &adapters);
+    const capabilities = try parseAdapters(arena_state.allocator(), &adapters, &.{&.{}}, "/run/1");
 
     try std.testing.expectEqual(0, capabilities.len);
+}
+
+test "parseAdapters points setEnv at the adapter's private dir" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const adapters = try std.json.parseFromSliceLeaky([]const Adapter, arena,
+        \\[{"name":"gitlab","binary":"glab","setEnv":{"GLAB_CONFIG_DIR":"{dir}","GITLAB_HOST":"gitlab.com"},
+        \\  "capabilities":[{"name":"cli","description":"Run glab.","argv":[]}]}]
+    , .{});
+    const capabilities = try parseAdapters(arena, adapters, &.{&.{}}, "/run/1");
+
+    try std.testing.expectEqualStrings("GLAB_CONFIG_DIR", capabilities[0].set_env[0].name);
+    try std.testing.expectEqualStrings("/run/1/adapter-gitlab", capabilities[0].set_env[0].value);
+    try std.testing.expectEqualStrings("gitlab.com", capabilities[0].set_env[1].value);
 }

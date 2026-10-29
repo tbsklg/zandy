@@ -1,60 +1,35 @@
 # zandy
 
-A declarative macOS sandbox for coding agents, built with Nix.
+**A sandbox for coding agents on macOS: declared in Nix, run by Zig, enforced by the macOS kernel.**
 
-Coding agents like Claude Code and opencode run with your user's permissions: read access to all of `$HOME`, every program on the system and every credential. zandy restricts the process to what you declare in a flake:
+You declare in a flake what Claude Code or opencode may touch, and zandy starts the agent so it can't touch anything else:
 
-- **Files:** the project directory, not the rest of `$HOME`.
-- **Programs:** only those in the env; nothing from Homebrew or `/usr/bin`.
-- **Credentials:** none. Tools that need them, like `glab` and `aws`, run outside the sandbox through a broker; the model backend is reached through a gateway that holds its key.
+- your project, not the rest of `$HOME`
+- your flake's tools, not your machine's
+- port 443 and the gateway, nothing else
+- no credentials inside: the broker and the gateway use them outside the sandbox
 
-## Vision
+| | |
+|---|---|
+| **Nix** | declares the sandbox: tools, files, network, adapters, model backend |
+| **Zig** | zandy itself: builds the Seatbelt profile, reads the secrets, runs the broker and the gateway |
+| **macOS** | Seatbelt enforces the profile in the kernel; secrets live in the keychain. Apple Silicon only |
 
-zandy is a proof of concept. The goal is a self-contained, declarative sandbox that follows functional patterns:
+The design follows three principles: the sandbox is a pure function of its declaration, it is immutable, and it holds no credentials. See [design.md](design.md#principles).
 
-- **A pure function of its declaration.** One flake describes everything an agent gets: tools, filesystem, network, credentials and the model backend. The same flake always yields the same sandbox; nothing outside it, no global config or state in `$HOME`, changes the result.
-- **Immutable.** The built sandbox is a read-only value in `/nix/store`. Changing it means changing the declaration and building a new one, not mutating the old one.
-- **Side effects at the edge.** The sandbox holds no credentials. Effects that need them happen outside, in the broker or the gateway, through explicit requests.
-- **Parse, don't validate.** Every input is parsed into a precise type, once, at the boundary: the flake by the Nix options, the manifest and requests by zandy.
-- **macOS on Apple Silicon only.** zandy is built on Seatbelt and the macOS keychain. There is no support for Intel Macs, Linux or Windows, and none is planned.
+## Quickstart
 
-Next steps are in [TODO.md](TODO.md).
-
-## Nix in 30 seconds
-
-Nix is a package manager that builds every package into its own read-only directory under `/nix/store`, named by a hash of everything that went into it (`/nix/store/…-ripgrep-14.1.1`). A package's *closure* is that directory plus every store path it depends on. A `flake.nix` describes what to build and pins all inputs in `flake.lock`, so the same flake builds the same result on any machine.
-
-## Why Nix
-
-- **An exact list of what may run.** The closure is every file the agent's tools need. zandy allows exactly those store paths to execute, instead of allowing all of `/usr/bin` or Homebrew.
-- **Tools the agent can't change.** `/nix/store` is read-only, so the agent can't modify or replace the programs it runs.
-- **Per-project toolchains.** A project's JDK or Node version lives in its env, not installed globally.
-- **Typed configuration.** Your sandbox is a Nix expression, checked at build time. zandy has no config files of its own.
-- **Reproducible.** Pinned inputs mean the same sandbox for everyone on the team.
-
-## How it fits together
-
-![overview](docs/overview.png)
-
-- **Nix describes the sandbox:** which tools live inside, which stay outside behind the broker. The result holds no secrets.
-- **zandy** (Zig) turns that into a Seatbelt profile, starts the gateway and the agent, and runs the broker. Credentials only exist outside the sandbox.
-- **Seatbelt**, the macOS kernel sandbox, enforces the profile.
-
-Install Nix and enable flakes:
+Install Nix and enable flakes; Zig, claude, glab, aws and the gateway proxies all come from Nix:
 
 ```sh
 sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install)
 mkdir -p ~/.config/nix && echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
 ```
 
-Check with `nix flake --help`. zandy needs nothing else besides macOS on Apple Silicon; Zig, claude, glab, aws and the gateway proxies all come from Nix.
+You also need:
 
-## Quickstart
-
-You need:
-
-- A model backend for the gateway: an AWS profile with Bedrock access in `~/.aws/config`, logged in (e.g. `aws sso login --profile acme-bedrock`), or `ANTHROPIC_API_KEY` exported in the shell. See [Model backend](#model-backend).
-- The env vars of the adapters you keep, exported in the shell that starts zandy, e.g. `GITLAB_TOKEN` for `zandy.adapters.gitlab`.
+- A model backend for the gateway: an AWS profile with Bedrock access in `~/.aws/config`, logged in (e.g. `aws sso login --profile acme-bedrock`), or an Anthropic API key. See [Model backend](#model-backend).
+- The secrets of the adapters you keep, e.g. a GitLab token for `zandy.adapters.gitlab`. See [Secrets](#secrets).
 
 ```sh
 mkdir -p ~/.config/zandy && cd ~/.config/zandy
@@ -66,6 +41,7 @@ nix profile add ~/.config/zandy   # older Nix: nix profile install
 cd ~/code/widgets
 zandy-claude                      # claude, sandboxed, in this directory
 zandy-claude --zandy-config       # the manifest and the broker methods, without starting claude
+zandy-claude --zandy-secret gitlab-token   # store a secret, see Secrets
 ```
 
 After changing `flake.nix`: `git add -A && nix flake update zandy && nix profile upgrade --all`.
@@ -79,6 +55,43 @@ cd ~/code/widgets
 nix run ~/.config/zandy/widgets
 ```
 
+## How it works
+
+```
+ build time                     run time
+
+ flake.nix                      zandy.keychain-db
+    │                               │ secrets
+    ▼                               ▼
+   Nix ──▶ sandbox env ──────▶   zandy ─────────── profile ──────────┐
+           tools, manifest,         │ starts, hands secrets           ▼
+           no secrets               │ via named pipes        ┌─ Seatbelt ──┐
+                          ┌─────────┴────────┐               │    agent    │
+                          ▼                  ▼               └──┬───────┬──┘
+                       broker ◀── request ───┼──────────────────┘       │
+                       runs glab, aws        │                          │
+                          │               gateway ◀──────── HTTP ───────┘
+                          ▼               proxy, adds auth
+                     GitLab, AWS             │ HTTPS
+                                             ▼
+                                        model backend
+```
+
+- **Nix describes the sandbox:** which tools live inside, which stay outside behind the broker. The result holds no secrets.
+- **zandy** (Zig) turns that into a Seatbelt profile, reads the secrets, starts the gateway and the agent, and runs the broker.
+- **Seatbelt** enforces the profile. Once applied, the agent can't loosen it.
+
+The agent may write the project directory, except `flake.nix`, `flake.lock`, `.envrc`, `.git/config` and `.git/hooks`. It may run only programs from the env's closure, so no Homebrew, `/usr/bin` or binaries it downloads, and connect only to port 443, DNS and the gateway's port on localhost.
+
+Inside the sandbox, the agent reaches your tools through the broker:
+
+```sh
+zandy-client discover
+zandy-client call gitlab.cli '{"args":["issue","list","--repo","group/name"]}'
+```
+
+Adapters pass commands through; the token's scopes and the profile's IAM permissions decide what they may do. Design decisions: [design.md](design.md). Next steps: [TODO.md](TODO.md).
+
 ## Configuration
 
 ```nix
@@ -89,7 +102,7 @@ zandy.lib.mkSandboxEnv {
   packages = [ pkgs.ripgrep ];                      # extra programs the agent may run
   gateway = zandy.gateways.bedrock { profile = "acme-bedrock"; region = "eu-west-1"; };
   adapters = [
-    zandy.adapters.gitlab                           # gitlab.cli, uses GITLAB_TOKEN
+    (zandy.adapters.gitlab { })                     # gitlab.cli, uses the gitlab-token secret
     (zandy.adapters.aws { profiles = [ "acme-dev" ]; })
   ];
   filesystem.allowRead = [ "~/notes" ];
@@ -111,14 +124,33 @@ Unknown or mistyped options fail at build time. Full reference with types and de
 
 The agent reaches its model through a gateway: a local proxy zandy starts outside the sandbox, which adds the credentials and forwards to one fixed upstream. The sandbox can only reach the gateway's port; the key never enters it.
 
-| Gateway | Proxy | Needs in the shell that starts zandy |
+| Gateway | Proxy | Needs |
 |---|---|---|
 | `zandy.gateways.bedrock { profile; region; }` | `aws-sigv4-proxy`, signs with the profile | a logged-in AWS profile |
-| `zandy.gateways.anthropic { }` | Caddy, sets `X-Api-Key` | `ANTHROPIC_API_KEY` |
-| `zandy.gateways.anthropicOauth { }` | Caddy, sets `Authorization: Bearer` with the Claude subscription login it reads from the macOS keychain at start | a Claude login, from running `claude` once outside zandy |
-| `zandy.gateways.openai { host ? "api.openai.com"; }` | Caddy, sets `Authorization: Bearer` | `OPENAI_API_KEY` |
+| `zandy.gateways.anthropic { service ? "anthropic-api-key"; }` | Caddy, sets `X-Api-Key` | the API key, stored with `--zandy-secret anthropic-api-key` |
+| `zandy.gateways.anthropicOauth { }` | Caddy, sets `Authorization: Bearer` with the Claude subscription login it reads from the login keychain at start | a Claude login, from running `claude` once outside zandy |
+| `zandy.gateways.openai { service ? "openai-api-key"; host ? "api.openai.com"; }` | Caddy, sets `Authorization: Bearer` | the API key, stored with `--zandy-secret openai-api-key` |
 
 The preset decides how the app finds the gateway, via `gatewayEnv`. The claude preset sets `ANTHROPIC_BEDROCK_BASE_URL` and `CLAUDE_CODE_SKIP_BEDROCK_AUTH` for Bedrock, and `ANTHROPIC_BASE_URL` for Anthropic. One gateway at a time; without one, the app reaches no model through zandy.
+
+## Secrets
+
+zandy keeps secrets in its own keychain, `~/.zandy/zandy.keychain-db`, outside the sandbox. Create it once; `security` asks for a password for it:
+
+```sh
+security create-keychain ~/.zandy/zandy.keychain-db
+security set-keychain-settings ~/.zandy/zandy.keychain-db   # no auto-lock
+```
+
+Then store each secret with the launcher. It reads the secret without echo and hands it to `security` on stdin, so it never shows up in argv or your shell history:
+
+```sh
+zandy-claude --zandy-secret gitlab-token          # or: zandy secret set gitlab-token
+```
+
+The keychain never locks on its own; after a reboot, macOS asks for its password the first time zandy reads it. At launch zandy reads the secrets the gateway and adapters declare and keeps them in memory. The proxy and the adapters read them as an env file or a config file that is a named pipe in `~/.zandy/run/<pid>`, which the sandbox can't open; the text passes through the pipe each time they start and never lands on disk. Never through their environment.
+
+Don't export secrets in the shell that starts zandy. A process in the sandbox can read the environment of every process running as your user with `sysctl kern.procargs2`, and Seatbelt can't block it.
 
 If Bedrock answers `refresh cached SSO token failed … InvalidGrantException`, the SSO session has expired: run `aws sso login --profile <profile>` again.
 
@@ -151,14 +183,17 @@ zandy.lib.mkSandboxEnv {
 }
 ```
 
-The agent then calls `zandy-client call mac.say '{"voice":"Bad News","text":"the tests failed"}'`. `say` is not a Nix package, so a one-line wrapper calls `/usr/bin/say`; it runs in the broker, where `/usr/bin` is reachable. A real adapter adds the env vars that hold its secrets, e.g. `env = [ "GITLAB_TOKEN" ];`.
+The agent then calls `zandy-client call mac.say '{"voice":"Bad News","text":"the tests failed"}'`. `say` is not a Nix package, so a one-line wrapper calls `/usr/bin/say`; it runs in the broker, where `/usr/bin` is reachable. A real adapter declares its secrets and how its tool reads them; see [nix/adapters/gitlab.nix](nix/adapters/gitlab.nix), which writes the token into a glab config file.
 
 | Field | Meaning |
 |---|---|
 | `name` | Prefix of the method names: `<name>.<capability>` |
 | `package` | Derivation the broker runs; must not be in `packages` or the preset's packages |
 | `binary` | Program in `package/bin` |
-| `env` | Env vars passed from the shell that started zandy, besides `PATH` and `HOME` |
+| `env` | Env vars passed from the shell that started zandy, besides `PATH` and `HOME`; not for secrets |
+| `secrets` | Where each secret lives, e.g. `secrets.GITLAB_TOKEN.keychain = { service = "gitlab-token"; }`; `store = "login"` reads the login keychain, `field` a path into a JSON value |
+| `files` | Files the adapter reads, as `0600` named pipes in its private dir, filled on every call; `{secret.NAME}` becomes the secret, at most 4096 bytes in all |
+| `setEnv` | Env vars set for the command; `{dir}` becomes the private dir |
 | `capabilities` | The methods: `name`, `description`, `params`, `argv` |
 
 How the broker runs a method:
@@ -167,23 +202,7 @@ How the broker runs a method:
 - **Params.** All are required. `string` and `choice` values may not start with `-`, so they can't become options. A `choice` with an empty `choices` list drops the method. `list` values pass through unchecked.
 - **Process.** The command runs outside the sandbox, in the directory zandy started in. Exit 0 returns stdout to the agent; anything else returns stderr.
 
-Whatever the command can do, the agent can do. Prefer narrow methods with `string` and `choice` params over a `list` that passes arguments through: `git` with free arguments runs any command, e.g. via `-c core.sshCommand=…`. Avoid tools that read the project directory, like `git` or `make`: the agent can write there, and the command runs what the project configures, outside the sandbox.
-
-## What the agent can do
-
-- Read and write the working directory, except `flake.nix`, `flake.lock`, `.envrc`, `.git/config` and `.git/hooks`.
-- Run only programs from the env (`PATH` is the env's `sandbox/bin`). Homebrew, `/usr/bin` and downloaded binaries are blocked.
-- Connect to port 443, DNS and the gateway's port on localhost. Nothing else.
-- Use credentials only through the broker:
-
-  ```sh
-  zandy-client discover
-  zandy-client call gitlab.cli '{"args":["issue","list","--repo","group/name"]}'
-  ```
-
-  Adapters pass commands through; the token's scopes and the profile's IAM permissions decide what they may do.
-
-Details and design decisions: [design.md](design.md).
+Whatever the command can do, the agent can do, including printing its own credential: `gitlab.cli` with `["config", "get", "token"]` returns the GitLab token. Prefer narrow methods with `string` and `choice` params over a `list` that passes arguments through: `git` with free arguments runs any command, e.g. via `-c core.sshCommand=…`. Avoid tools that read the project directory, like `git` or `make`: the agent can write there, and the command runs what the project configures, outside the sandbox.
 
 ## Development
 

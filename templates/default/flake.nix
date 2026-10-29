@@ -19,7 +19,7 @@
           packages = [ pkgs.ripgrep ];
           gateway = zandy.gateways.bedrock { profile = "acme-bedrock"; region = "eu-west-1"; };
           adapters = [
-            zandy.adapters.gitlab
+            (zandy.adapters.gitlab { })
             (zandy.adapters.aws { profiles = [ "acme-dev" ]; })
           ];
         };

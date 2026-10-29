@@ -5,6 +5,7 @@ const broker = @import("broker.zig");
 const rpc = @import("rpc.zig");
 const registry = @import("registry.zig");
 const gateway = @import("gateway.zig");
+const secret = @import("secret.zig");
 
 const Env = @import("env.zig");
 const SandboxEnv = @import("sandbox_env.zig");
@@ -17,7 +18,20 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     const preset = manifest.preset;
     const bin_dir = sandbox_env.bin;
 
-    var running: ?gateway.Running = if (manifest.gateway) |config| gateway.start(arena, io, config, environ) catch |err| {
+    var dir_buf: [std.fs.max_name_bytes]u8 = undefined;
+    const dir_path = try broker.sessionDirPath(&dir_buf, env.home, std.c.getpid());
+    try broker.createSocketDir(io, dir_path);
+    defer broker.removeSessionDir(io, dir_path) catch |err| std.log.warn("session cleanup failed: {t}", .{err});
+
+    const adapter_pipes = try arena.alloc([]const secret.Pipe, manifest.adapters.len);
+    for (manifest.adapters, adapter_pipes) |adapter, *pipes| {
+        pipes.* = secret.materialize(arena, io, env.home, try registry.dirFor(arena, dir_path, adapter), adapter.secrets, adapter.files) catch |err| {
+            std.debug.print("zandy: adapter '{s}' could not get its secrets: {t}\n", .{ adapter.name, err });
+            return err;
+        };
+    }
+
+    var running: ?gateway.Running = if (manifest.gateway) |config| gateway.start(arena, io, config, environ, env.home, try secret.dirFor(arena, dir_path, "gateway")) catch |err| {
         std.debug.print("zandy: gateway '{s}' could not start: {t}\n", .{ config.name, err });
         return err;
     } else null;
@@ -36,11 +50,6 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     const argv = try arena.allocSentinel(?[*:0]const u8, 1 + extra_args.len, null);
     argv[0] = preset.binary.ptr;
     for (extra_args, argv[1..]) |arg, *slot| slot.* = arg.ptr;
-
-    var dir_buf: [std.fs.max_name_bytes]u8 = undefined;
-    const dir_path = try broker.sessionDirPath(&dir_buf, env.home, std.c.getpid());
-    try broker.createSocketDir(io, dir_path);
-    defer broker.removeSocketDir(io, dir_path) catch |err| std.log.warn("broker cleanup failed: {t}", .{err});
 
     var sock_buf: [std.fs.max_name_bytes]u8 = undefined;
     const sock_path = try std.fmt.bufPrintZ(&sock_buf, "{s}/broker.sock", .{dir_path});
@@ -70,7 +79,7 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     if (running) |r| for (try gateway.environFor(arena, preset.gatewayEnv, r)) |entry| try sandbox_environ.put(entry.name, entry.value);
     const envp = try sandbox_environ.createPosixBlock(arena, .{});
 
-    const ctx: rpc.Context = .{ .ticket = &ticket, .registry = .{ .capabilities = try registry.parseAdapters(arena, manifest.adapters) }, .environ = environ };
+    const ctx: rpc.Context = .{ .ticket = &ticket, .registry = .{ .capabilities = try registry.parseAdapters(arena, manifest.adapters, adapter_pipes, dir_path) }, .environ = environ };
 
     const pid = std.c.fork();
     if (pid == -1) return error.ForkFailed;

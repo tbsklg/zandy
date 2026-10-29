@@ -6,6 +6,7 @@ test {
     _ = @import("launch.zig");
     _ = @import("env.zig");
     _ = @import("macos.zig");
+    _ = @import("secret.zig");
     _ = @import("broker.zig");
     _ = @import("gateway.zig");
     _ = @import("rpc.zig");

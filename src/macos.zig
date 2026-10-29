@@ -21,7 +21,8 @@ pub extern "c" fn sandbox_init_with_parameters(
 /// /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/sandbox.h
 pub extern fn sandbox_free_error(errorbuf: [*c]u8) void;
 
-/// /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/unistd.h
+pub extern "c" fn mkfifo(path: [*:0]const u8, mode: std.c.mode_t) c_int;
+
 const cs_darwin_user_temp_dir = 65537;
 extern "c" fn confstr(name: c_int, buf: ?[*]u8, len: usize) usize;
 

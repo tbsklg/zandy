@@ -1,5 +1,6 @@
 const std = @import("std");
 const registry = @import("registry.zig");
+const secret = @import("secret.zig");
 
 pub const Value = union(enum) {
     one: []const u8,
@@ -88,20 +89,22 @@ pub const Outcome = union(enum) {
 
 const inherited_env = [_][]const u8{ "PATH", "HOME" };
 
-pub fn childEnviron(arena: std.mem.Allocator, parent: ?*const std.process.Environ.Map, names: []const []const u8) !std.process.Environ.Map {
+pub fn childEnviron(arena: std.mem.Allocator, parent: ?*const std.process.Environ.Map, names: []const []const u8, set: []const std.http.Header) !std.process.Environ.Map {
     var map = std.process.Environ.Map.init(arena);
-    const source = parent orelse return map;
-    for ([_][]const []const u8{ &inherited_env, names }) |group| {
+    if (parent) |source| for ([_][]const []const u8{ &inherited_env, names }) |group| {
         for (group) |name| {
             if (source.get(name)) |value| try map.put(name, value);
         }
-    }
+    };
+    for (set) |entry| try map.put(entry.name, entry.value);
     return map;
 }
 
 pub fn run(arena: std.mem.Allocator, io: std.Io, cap: registry.Capability, args: Args, parent: ?*const std.process.Environ.Map) !Outcome {
     const argv = try buildArgv(arena, cap.binary, cap.argv, args);
-    const environ = try childEnviron(arena, parent, cap.env);
+    const environ = try childEnviron(arena, parent, cap.env, cap.set_env);
+    const feed = try secret.Feed.start(arena, cap.pipes);
+    defer feed.finish();
     const result = try std.process.run(arena, io, .{ .argv = argv, .environ_map = &environ });
     return switch (result.term) {
         .exited => |code| if (code == 0) .{ .success = result.stdout } else .{ .failure = result.stderr },
@@ -190,7 +193,7 @@ test "buildArgv fills placeholders with parsed values" {
     try std.testing.expectEqualStrings("acme/widgets", argv[3]);
 }
 
-test "childEnviron keeps PATH, HOME and the adapter env only" {
+test "childEnviron keeps PATH, HOME and the adapter env only, plus what it sets" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -201,10 +204,11 @@ test "childEnviron keeps PATH, HOME and the adapter env only" {
     try parent.put("GITLAB_TOKEN", "secret");
     try parent.put("AWS_SECRET_ACCESS_KEY", "other");
 
-    const environ = try childEnviron(arena, &parent, &.{"GITLAB_TOKEN"});
+    const environ = try childEnviron(arena, &parent, &.{"GITLAB_TOKEN"}, &.{.{ .name = "GLAB_CONFIG_DIR", .value = "/run/1/adapter-gitlab" }});
 
-    try std.testing.expectEqual(3, environ.count());
+    try std.testing.expectEqual(4, environ.count());
     try std.testing.expectEqualStrings("secret", environ.get("GITLAB_TOKEN").?);
+    try std.testing.expectEqualStrings("/run/1/adapter-gitlab", environ.get("GLAB_CONFIG_DIR").?);
     try std.testing.expectEqual(null, environ.get("AWS_SECRET_ACCESS_KEY"));
 }
 
@@ -279,4 +283,25 @@ test "parseParams rejects a value that is not a configured choice" {
     , .{});
 
     try std.testing.expectError(error.InvalidParams, parseParams(arena, &declared, params.object));
+}
+
+test "run feeds the adapter's pipes on every call, and finishes when the command ignores them" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const len = try tmp.dir.realPath(std.testing.io, &dir_buf);
+    const dir = try std.fs.path.join(arena, &.{ dir_buf[0..len], "adapter-gitlab" });
+    const files = try std.json.parseFromSliceLeaky(secret.Files, arena, "{\"config.yml\":\"token: abc\\n\"}", .{});
+    const pipes = try secret.materialize(arena, std.testing.io, "/Users/acme", dir, .{}, files);
+
+    const cat: registry.Capability = .{ .name = "cat", .binary = "/bin/cat", .argv = &.{.{ .literal = pipes[0].path }}, .pipes = pipes };
+    try std.testing.expectEqualStrings("token: abc\n", (try run(arena, std.testing.io, cat, .{ .values = &.{} }, null)).success);
+    try std.testing.expectEqualStrings("token: abc\n", (try run(arena, std.testing.io, cat, .{ .values = &.{} }, null)).success);
+
+    const echo: registry.Capability = .{ .name = "echo", .binary = "/bin/echo", .argv = &.{.{ .literal = "ignored" }}, .pipes = pipes };
+    try std.testing.expectEqualStrings("ignored\n", (try run(arena, std.testing.io, echo, .{ .values = &.{} }, null)).success);
 }

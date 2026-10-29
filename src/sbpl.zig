@@ -108,7 +108,6 @@ test "write expr" {
     try std.testing.expectEqualStrings("(string-append (param \"CWD\") \"a/b/c\")", aw.written());
 }
 
-/// /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/sys/socket.h
 pub const SocketDomain = enum(u32) {
     af_system = 32,
 };

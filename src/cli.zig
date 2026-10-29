@@ -3,6 +3,7 @@ const std = @import("std");
 pub const Command = union(enum) {
     launch: Launch,
     config: []const u8,
+    secret: []const u8,
 };
 
 pub const Launch = struct {
@@ -13,6 +14,10 @@ pub const Launch = struct {
 pub fn parseArgs(args: []const [:0]const u8) !Command {
     if (args.len < 2) return error.NoEnv;
     if (std.mem.eql(u8, args[1], "--help")) return error.Help;
+    if (std.mem.eql(u8, args[1], "secret")) {
+        if (args.len != 4 or !std.mem.eql(u8, args[2], "set")) return error.NoService;
+        return .{ .secret = args[3] };
+    }
     if (std.mem.eql(u8, args[1], "config")) {
         if (args.len != 4 or !std.mem.eql(u8, args[2], "--env")) return error.NoEnv;
         return .{ .config = args[3] };
@@ -20,6 +25,7 @@ pub fn parseArgs(args: []const [:0]const u8) !Command {
     if (!std.mem.eql(u8, args[1], "--env")) return error.NoEnv;
     if (args.len < 3) return error.NoEnv;
     if (args.len == 4 and std.mem.eql(u8, args[3], "--zandy-config")) return .{ .config = args[2] };
+    if (args.len == 5 and std.mem.eql(u8, args[3], "--zandy-secret")) return .{ .secret = args[4] };
 
     return .{ .launch = .{ .env = args[2], .args = args[3..] } };
 }
@@ -28,6 +34,9 @@ pub const usage =
     \\usage: zandy --env <drv> [args...]
     \\       zandy config --env <drv>    show the manifest and the methods the agent sees
     \\       zandy-<name> --zandy-config the same, from the launcher
+    \\       zandy secret set <service>  store a secret in ~/.zandy/zandy.keychain-db
+    \\       zandy-<name> --zandy-secret <service>
+    \\                                   the same, from the launcher
     \\
     \\  <drv>  sandbox env built by zandy.lib.mkSandboxEnv, e.g. ./result
     \\         usually started with its launcher zandy-<name> or `nix run`
@@ -77,4 +86,22 @@ test "returns error when config has no env" {
 test "returns help for --help" {
     const long = [_][:0]const u8{ "zandy", "--help" };
     try std.testing.expectError(error.Help, parseArgs(&long));
+}
+
+test "returns secret command with its service" {
+    const args = [_][:0]const u8{ "zandy", "secret", "set", "gitlab-token" };
+
+    try std.testing.expectEqualStrings("gitlab-token", (try parseArgs(&args)).secret);
+}
+
+test "returns secret command for --zandy-secret from the launcher" {
+    const args = [_][:0]const u8{ "zandy", "--env", "./result", "--zandy-secret", "gitlab-token" };
+
+    try std.testing.expectEqualStrings("gitlab-token", (try parseArgs(&args)).secret);
+}
+
+test "returns error when secret set has no service" {
+    const args = [_][:0]const u8{ "zandy", "secret", "set" };
+
+    try std.testing.expectError(error.NoService, parseArgs(&args));
 }

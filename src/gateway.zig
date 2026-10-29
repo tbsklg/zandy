@@ -1,19 +1,12 @@
 const std = @import("std");
-
-pub const Keychain = struct {
-    service: []const u8,
-    field: []const []const u8 = &.{},
-};
-
-pub const Secret = union(enum) {
-    keychain: Keychain,
-};
+const secret = @import("secret.zig");
 
 pub const Gateway = struct {
     name: []const u8,
     argv: []const []const u8,
     env: std.json.ArrayHashMap([]const u8) = .{},
-    secrets: std.json.ArrayHashMap(Secret) = .{},
+    secrets: secret.Sources = .{},
+    files: secret.Files = .{},
 };
 
 pub const Env = struct {
@@ -33,19 +26,25 @@ pub const Running = struct {
     }
 };
 
-pub fn start(arena: std.mem.Allocator, io: std.Io, gateway: Gateway, environ: *const std.process.Environ.Map) !Running {
+const inherited_env = [_][]const u8{ "HOME", "PATH", "TMPDIR", "USER" };
+
+pub fn start(arena: std.mem.Allocator, io: std.Io, gateway: Gateway, environ: *const std.process.Environ.Map, home: []const u8, dir: []const u8) !Running {
+    const feed = try secret.Feed.start(arena, try secret.materialize(arena, io, home, dir, gateway.secrets, gateway.files));
+    defer feed.finish();
+
     const port = try freePort(io);
     const port_text = try std.fmt.allocPrint(arena, "{d}", .{port});
 
-    var child_environ = try environ.clone(arena);
+    var child_environ = std.process.Environ.Map.init(arena);
+    for (inherited_env) |name| {
+        if (environ.get(name)) |value| try child_environ.put(name, value);
+    }
     var it = gateway.env.map.iterator();
-    while (it.next()) |entry| try child_environ.put(entry.key_ptr.*, entry.value_ptr.*);
-    var secrets = gateway.secrets.map.iterator();
-    while (secrets.next()) |entry| try child_environ.put(entry.key_ptr.*, try readSecret(arena, io, entry.value_ptr.*));
+    while (it.next()) |entry| try child_environ.put(entry.key_ptr.*, try secret.withDir(arena, entry.value_ptr.*, dir));
     try child_environ.put("ZANDY_GATEWAY_PORT", port_text);
 
     var child = try std.process.spawn(io, .{
-        .argv = try withPort(arena, gateway.argv, port_text),
+        .argv = try fillArgv(arena, gateway.argv, port_text, dir),
         .environ_map = &child_environ,
         .stdin = .ignore,
         .stdout = .ignore,
@@ -70,33 +69,6 @@ pub fn environFor(arena: std.mem.Allocator, entries: []const Env, running: Runni
     return vars.items;
 }
 
-fn readSecret(arena: std.mem.Allocator, io: std.Io, secret: Secret) ![]const u8 {
-    return switch (secret) {
-        .keychain => |keychain| readKeychain(arena, io, keychain),
-    };
-}
-
-fn readKeychain(arena: std.mem.Allocator, io: std.Io, keychain: Keychain) ![]const u8 {
-    const result = try std.process.run(arena, io, .{ .argv = &.{ "/usr/bin/security", "find-generic-password", "-s", keychain.service, "-w" } });
-    switch (result.term) {
-        .exited => |code| if (code != 0) return error.NoKeychainItem,
-        else => return error.NoKeychainItem,
-    }
-    const value = std.mem.trimEnd(u8, result.stdout, "\n");
-    if (keychain.field.len == 0) return value;
-    return jsonField(arena, value, keychain.field);
-}
-
-fn jsonField(arena: std.mem.Allocator, json: []const u8, path: []const []const u8) ![]const u8 {
-    var value = std.json.parseFromSliceLeaky(std.json.Value, arena, json, .{}) catch return error.NoKeychainField;
-    for (path) |name| {
-        if (value != .object) return error.NoKeychainField;
-        value = value.object.get(name) orelse return error.NoKeychainField;
-    }
-    if (value != .string) return error.NoKeychainField;
-    return value.string;
-}
-
 fn freePort(io: std.Io) !u16 {
     const address = try std.Io.net.IpAddress.parseIp4("127.0.0.1", 0);
     var server = try address.listen(io, .{});
@@ -104,9 +76,9 @@ fn freePort(io: std.Io) !u16 {
     return server.socket.address.getPort();
 }
 
-fn withPort(arena: std.mem.Allocator, argv: []const []const u8, port_text: []const u8) ![]const []const u8 {
+fn fillArgv(arena: std.mem.Allocator, argv: []const []const u8, port_text: []const u8, dir: []const u8) ![]const []const u8 {
     const out = try arena.alloc([]const u8, argv.len);
-    for (argv, out) |arg, *slot| slot.* = try std.mem.replaceOwned(u8, arena, arg, "{port}", port_text);
+    for (argv, out) |arg, *slot| slot.* = try secret.withDir(arena, try std.mem.replaceOwned(u8, arena, arg, "{port}", port_text), dir);
     return out;
 }
 
@@ -121,13 +93,14 @@ fn waitUntilListening(io: std.Io, port: u16) !void {
     return error.GatewayNotListening;
 }
 
-test "withPort fills in the port wherever argv asks for it" {
+test "fillArgv fills in the port and the private dir wherever argv asks for them" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
-    const argv = try withPort(arena_state.allocator(), &.{ "aws-sigv4-proxy", "--port", "127.0.0.1:{port}" }, "4711");
-    try std.testing.expectEqualStrings("aws-sigv4-proxy", argv[0]);
+    const argv = try fillArgv(arena_state.allocator(), &.{ "caddy", "--port", "127.0.0.1:{port}", "--envfile", "{dir}/secrets.env" }, "4711", "/run/1/gateway");
+    try std.testing.expectEqualStrings("caddy", argv[0]);
     try std.testing.expectEqualStrings("127.0.0.1:4711", argv[2]);
+    try std.testing.expectEqualStrings("/run/1/gateway/secrets.env", argv[4]);
 }
 
 test "environFor fills in the url of the running gateway" {
@@ -147,32 +120,15 @@ test "environFor fills in the url of the running gateway" {
     try std.testing.expectEqualStrings("zandy-gateway", vars[1].value);
 }
 
-test "parses keychain secrets of a gateway" {
+test "parses the secrets and files of a gateway" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
 
     const gateway = try std.json.parseFromSliceLeaky(Gateway, arena_state.allocator(),
-        \\{"name":"anthropic","argv":["caddy"],"secrets":{"ZANDY_GATEWAY_TOKEN":{"keychain":{"service":"Claude Code-credentials","field":["claudeAiOauth","accessToken"]}}}}
+        \\{"name":"anthropic","argv":["caddy","--envfile","{dir}/secrets.env"],
+        \\ "secrets":{"ANTHROPIC_API_KEY":{"keychain":{"service":"anthropic-api-key"}}},
+        \\ "files":{"secrets.env":"ANTHROPIC_API_KEY={secret.ANTHROPIC_API_KEY}\n"}}
     , .{});
-    const keychain = gateway.secrets.map.get("ZANDY_GATEWAY_TOKEN").?.keychain;
-    try std.testing.expectEqualStrings("Claude Code-credentials", keychain.service);
-    try std.testing.expectEqualStrings("accessToken", keychain.field[1]);
-}
-
-test "jsonField follows the path to a string" {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-
-    const token = try jsonField(arena_state.allocator(), "{\"claudeAiOauth\":{\"accessToken\":\"sk-ant-oat\"}}", &.{ "claudeAiOauth", "accessToken" });
-    try std.testing.expectEqualStrings("sk-ant-oat", token);
-}
-
-test "jsonField rejects a missing field and a non-string value" {
-    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-
-    try std.testing.expectError(error.NoKeychainField, jsonField(arena, "{\"claudeAiOauth\":{}}", &.{ "claudeAiOauth", "accessToken" }));
-    try std.testing.expectError(error.NoKeychainField, jsonField(arena, "{\"claudeAiOauth\":{\"accessToken\":1}}", &.{ "claudeAiOauth", "accessToken" }));
-    try std.testing.expectError(error.NoKeychainField, jsonField(arena, "not json", &.{"claudeAiOauth"}));
+    try std.testing.expectEqualStrings("anthropic-api-key", gateway.secrets.map.get("ANTHROPIC_API_KEY").?.keychain.service);
+    try std.testing.expectEqualStrings("ANTHROPIC_API_KEY={secret.ANTHROPIC_API_KEY}\n", gateway.files.map.get("secrets.env").?);
 }

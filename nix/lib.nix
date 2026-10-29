@@ -41,9 +41,12 @@ let
             inherit (adapter) name capabilities;
             binary = "${adapter.package}/bin/${adapter.binary}";
             env = adapter.env or [ ];
+            setEnv = adapter.setEnv or { };
+            secrets = adapter.secrets or { };
+            files = adapter.files or { };
           })
           resolvedAdapters;
-        gateway = if gateway == null then null else { inherit (gateway) name argv; env = gateway.env or { }; secrets = gateway.secrets or { }; };
+        gateway = if gateway == null then null else { inherit (gateway) name argv; env = gateway.env or { }; secrets = gateway.secrets or { }; files = gateway.files or { }; };
         inherit (cfg) filesystem;
       };
 

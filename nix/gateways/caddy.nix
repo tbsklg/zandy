@@ -1,5 +1,6 @@
-{ name, host, headers, addHeaders ? { } }: pkgs:
+{ name, host, headers, addHeaders ? { }, secrets ? { } }: pkgs:
 let
+  inherit (pkgs) lib;
   config = pkgs.writeText "${name}-gateway.json" (builtins.toJSON {
     admin.disabled = true;
     logging.logs.default.level = "ERROR";
@@ -14,14 +15,17 @@ let
           headers.request = {
             set = { Host = [ host ]; } // headers;
             add = addHeaders;
-            delete = pkgs.lib.subtractLists (builtins.attrNames headers) [ "Authorization" "X-Api-Key" ];
+            delete = lib.subtractLists (builtins.attrNames headers) [ "Authorization" "X-Api-Key" ];
           };
         }];
       }];
     };
   });
+  envfile = lib.concatMapStrings (secret: "${secret}={secret.${secret}}\n") (builtins.attrNames secrets);
 in
 {
-  inherit name;
-  argv = [ "${pkgs.caddy}/bin/caddy" "run" "--config" "${config}" ];
+  inherit name secrets;
+  files = lib.optionalAttrs (secrets != { }) { "secrets.env" = envfile; };
+  argv = [ "${pkgs.caddy}/bin/caddy" "run" "--config" "${config}" ]
+    ++ lib.optionals (secrets != { }) [ "--envfile" "{dir}/secrets.env" ];
 }

@@ -49,7 +49,7 @@ list of function that evaluates to a(n) (attribute set)
 *Example:*
 
 ```nix
-[ zandy.adapters.gitlab (zandy.adapters.aws { profiles = [ "acme-dev" ]; }) ]
+[ (zandy.adapters.gitlab { }) (zandy.adapters.aws { profiles = [ "acme-dev" ]; }) ]
 ```
 
 
@@ -321,5 +321,3 @@ list of (attribute set)
 ```nix
 [ ]
 ```
-
-

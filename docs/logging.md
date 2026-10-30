@@ -8,7 +8,7 @@ zandy logs to the macOS unified log under the subsystem `tbsklg.zandy`, with one
 
 Each operation the sandbox blocks is logged by macOS itself and tagged `zandy-<pid>`, where `<pid>` is the session in the first `zandy` line. The log holds no params, output or secret values. The agent can't read it. To see the full Seatbelt profile, run `zandy-<name> --zandy-config`.
 
-Watch it live in a second terminal:
+Open a second terminal and run one of the following commands:
 
 ```sh
 log stream --level debug --predicate 'subsystem == "tbsklg.zandy" OR (senderImagePath ENDSWITH "/Sandbox" AND eventMessage CONTAINS "\nzandy-")'
@@ -17,7 +17,13 @@ log stream --level debug --predicate 'subsystem == "tbsklg.zandy" OR (senderImag
 To follow one session:
 
 ```sh
-log stream --level debug --predicate '(subsystem == "tbsklg.zandy" AND processID == <pid>) OR (senderImagePath ENDSWITH "/Sandbox" AND eventMessage CONTAINS "\nzandy-<pid>")'
+log stream --level debug --predicate '(subsystem == "tbsklg.zandy" AND processID == <pid>) OR (senderImagePath ENDSWITH "/Sandbox" AND eventMessage MATCHES "(?s).*\nzandy-<pid>([^0-9].*)?")'
+```
+
+To follow one scope:
+
+```sh
+log stream --level debug --predicate 'subsystem == "tbsklg.zandy" AND category == "broker"'
 ```
 
 Or look back at past sessions. macOS keeps everything except `debug` on disk for a few days:

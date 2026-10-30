@@ -45,6 +45,7 @@ pub fn logFn(
 // Adapted from Ghostty: https://github.com/ghostty-org/ghostty/blob/42c92b620e6acec5bf6953c4e1c9aa489b5cb918/src/main_ghostty.zig#L170-L199
 fn logger(comptime scope: @EnumLiteral()) ?*OsLog {
     const cache = struct {
+        const name = scope;
         var log: std.atomic.Value(?*OsLog) = .init(null);
     };
     if (cache.log.load(.acquire)) |log| return log;

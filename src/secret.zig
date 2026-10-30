@@ -1,6 +1,8 @@
 const std = @import("std");
 const macos = @import("macos.zig");
 
+const log = std.log.scoped(.broker);
+
 pub const Store = enum {
     zandy,
     login,
@@ -89,9 +91,17 @@ pub const Feed = struct {
 };
 
 fn feed(pipe: Pipe) void {
-    const fd = std.c.open(pipe.path.ptr, .{ .ACCMODE = .WRONLY });
-    if (fd < 0) return;
+    const fd = std.c.open(pipe.path.ptr, .{ .ACCMODE = .WRONLY, .NOFOLLOW = true });
+    if (fd < 0) {
+        log.err("{s} could not be opened", .{pipe.path});
+        return;
+    }
     defer _ = std.c.close(fd);
+    var stat: std.c.Stat = undefined;
+    if (std.c.fstat(fd, &stat) != 0 or !std.c.S.ISFIFO(stat.mode)) {
+        log.err("{s} is not a named pipe", .{pipe.path});
+        return;
+    }
     if (std.c.fcntl(fd, std.c.F.SETNOSIGPIPE, @as(c_int, 1)) != 0) return;
     var rest = pipe.text;
     while (rest.len > 0) {

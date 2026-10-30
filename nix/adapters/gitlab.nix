@@ -11,6 +11,8 @@
   setEnv = {
     GLAB_CONFIG_DIR = "{dir}";
     GITLAB_HOST = host;
+    GLAB_SHOW_WHATS_NEW = "false";
+    GLAB_CHECK_UPDATE = "false";
   };
   capabilities = [
     {

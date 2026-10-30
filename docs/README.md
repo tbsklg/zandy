@@ -155,6 +155,8 @@ zandy asks for the secret without echoing it, so it doesn't end up in your shell
 
 At launch, zandy reads the secrets that the gateway and the adapters need. They reach the proxy and the tools through named pipes in a private directory that the sandbox can't open. They never touch the disk and are never passed through an environment variable.
 
+That's why the GitLab adapter brings its own glab config and doesn't use `glab auth login`. glab's own login stores the token in plain text in `~/.config/glab-cli/config.yml`, where any process run by your user can read it.
+
 Don't export secrets in the shell that starts zandy. See [Security limits](#security-limits) for why.
 
 ## Inside the sandbox

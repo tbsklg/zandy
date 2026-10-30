@@ -38,6 +38,22 @@ zandy-claude
 
 The template uses Bedrock and the GitLab and AWS adapters. To switch the model backend or set up secrets, see the [docs](docs/README.md).
 
+## Update
+
+After editing your flake:
+
+```sh
+nix profile upgrade --all
+```
+
+To also pull the latest zandy, run in the flake's directory:
+
+```sh
+nix flake update zandy && nix profile upgrade --all
+```
+
+If your flake is in a git repo, `git add` new files first. Flakes only see tracked files.
+
 ## Documentation
 
 Everything else is in [docs](docs/README.md): configuration, model backends, secrets, writing adapters, security limits and troubleshooting.

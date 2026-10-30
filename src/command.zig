@@ -2,6 +2,10 @@ const std = @import("std");
 const registry = @import("registry.zig");
 const secret = @import("secret.zig");
 
+const log = std.log.scoped(.broker);
+
+const max_logged_stderr = 512;
+
 pub const Value = union(enum) {
     one: []const u8,
     many: []const []const u8,
@@ -106,10 +110,20 @@ pub fn run(arena: std.mem.Allocator, io: std.Io, cap: registry.Capability, args:
     const feed = try secret.Feed.start(arena, cap.pipes);
     defer feed.finish();
     const result = try std.process.run(arena, io, .{ .argv = argv, .environ_map = &environ });
-    return switch (result.term) {
-        .exited => |code| if (code == 0) .{ .success = result.stdout } else .{ .failure = result.stderr },
-        else => .{ .failure = result.stderr },
-    };
+    switch (result.term) {
+        .exited => |code| {
+            if (code == 0) return .{ .success = result.stdout };
+            log.info("{s} exited with {d}", .{ cap.name, code });
+        },
+        else => |term| log.info("{s} ended with {any}", .{ cap.name, term }),
+    }
+    log.debug("{s} stderr: {s}", .{ cap.name, firstLine(result.stderr) });
+    return .{ .failure = result.stderr };
+}
+
+fn firstLine(text: []const u8) []const u8 {
+    const line = text[0 .. std.mem.indexOfScalar(u8, text, '\n') orelse text.len];
+    return line[0..@min(line.len, max_logged_stderr)];
 }
 
 test "parseParams returns values in declared order" {

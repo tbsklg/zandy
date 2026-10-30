@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const subsystem = "dev.zandy";
+const subsystem = "tbsklg.zandy";
 
 const OsLog = opaque {};
 
@@ -36,9 +36,14 @@ pub fn logFn(
         buf[buf.len - 1] = 0;
         break :truncated buf[0 .. buf.len - 1 :0];
     };
+
     zandy_os_log_with_type(log, kind, message.ptr);
 }
 
+// One os_log handle per scope, created once and reused: creating one per log
+// call is slow, and Apple's guidance is to reuse them. The atomic swap handles
+// the broker thread racing the main thread on first use.
+// Adapted from Ghostty: https://github.com/ghostty-org/ghostty/blob/42c92b620e6acec5bf6953c4e1c9aa489b5cb918/src/main_ghostty.zig#L170-L199
 fn logger(comptime scope: @EnumLiteral()) ?*OsLog {
     const cache = struct {
         var log: std.atomic.Value(?*OsLog) = .init(null);

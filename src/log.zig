@@ -8,7 +8,6 @@ const LogType = enum(u8) {
     default = 0x00,
     debug = 0x02,
     err = 0x10,
-    fault = 0x11,
 };
 
 extern "c" fn os_log_create(subsystem: [*:0]const u8, category: [*:0]const u8) ?*OsLog;
@@ -61,8 +60,7 @@ fn logger(comptime scope: @EnumLiteral()) ?*OsLog {
 fn logType(comptime level: std.log.Level) LogType {
     return switch (level) {
         .debug => .debug,
-        .info => .default,
-        .warn => .err,
-        .err => .fault,
+        .info, .warn => .default,
+        .err => .err,
     };
 }

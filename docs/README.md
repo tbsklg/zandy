@@ -49,7 +49,7 @@ cd ~/code/widgets
 zandy-claude
 ```
 
-To see the env's config and the broker methods without starting the agent, run `zandy-claude --zandy-config`.
+To see the env's config, the broker methods and the Seatbelt profile without starting the agent, run `zandy-claude --zandy-config`.
 
 After changing `flake.nix`:
 

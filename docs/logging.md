@@ -6,9 +6,9 @@ zandy logs to the macOS unified log under the subsystem `tbsklg.zandy`, with one
 - `broker`: each method the agent called, with its outcome and duration
 - `gateway`: when the gateway started and stopped
 
-Each operation the sandbox blocks is logged by macOS itself and tagged `zandy-<pid>`, where `<pid>` is the session in the first `zandy` line. The log holds no params, output or secret values. The agent can't read it.
+Each operation the sandbox blocks is logged by macOS itself and tagged `zandy-<pid>`, where `<pid>` is the session in the first `zandy` line. The log holds no params, output or secret values. The agent can't read it. To see the full Seatbelt profile, run `zandy-<name> --zandy-config`.
 
-Watch it live in a second terminal, including the full Seatbelt profile at `debug`:
+Watch it live in a second terminal:
 
 ```sh
 log stream --level debug --predicate 'subsystem == "tbsklg.zandy" OR (senderImagePath ENDSWITH "/Sandbox" AND eventMessage CONTAINS "\nzandy-")'

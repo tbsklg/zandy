@@ -17,10 +17,23 @@ pub fn handle(arena: std.mem.Allocator, io: std.Io, ctx: *const Context, request
     const obj = parseObject(arena, request) catch |err| return try failure(arena, .null, err);
     const id = obj.get("id") orelse return null;
 
-    return switch (dispatch(arena, io, ctx, obj) catch |err| return try failure(arena, id, err)) {
+    const method = methodName(obj);
+    const started = std.Io.Clock.awake.now(io);
+    const outcome = dispatch(arena, io, ctx, obj) catch |err| {
+        log.info("{s} {s} {d}ms", .{ method, @errorName(err), started.untilNow(io, .awake).toMilliseconds() });
+        return try failure(arena, id, err);
+    };
+    log.info("{s} {s} {d}ms", .{ method, @tagName(outcome), started.untilNow(io, .awake).toMilliseconds() });
+
+    return switch (outcome) {
         .success => |result| try resultResponse(arena, id, result),
         .failure => |stderr| try errorResponse(arena, id, -32002, stderr),
     };
+}
+
+fn methodName(obj: std.json.ObjectMap) []const u8 {
+    const method = obj.get("method") orelse return "?";
+    return if (method == .string) method.string else "?";
 }
 
 fn parseObject(arena: std.mem.Allocator, request: []const u8) !std.json.ObjectMap {
@@ -46,11 +59,7 @@ fn dispatch(arena: std.mem.Allocator, io: std.Io, ctx: *const Context, obj: std.
     if (given != .object) return error.InvalidParams;
     const args = try command.parseParams(arena, cap.params, given.object);
 
-    const started = std.Io.Clock.awake.now(io);
-    const outcome = command.run(arena, io, cap, args, ctx.environ) catch return error.CommandNotStarted;
-    log.info("{s} {s} {d}ms", .{ method.string, @tagName(outcome), started.untilNow(io, .awake).toMilliseconds() });
-
-    return switch (outcome) {
+    return switch (command.run(arena, io, cap, args, ctx.environ) catch return error.CommandNotStarted) {
         .success => |stdout| .{ .success = try std.fmt.allocPrint(arena, "{f}", .{std.json.fmt(stdout, .{})}) },
         .failure => |stderr| .{ .failure = stderr },
     };

@@ -1,6 +1,8 @@
 const std = @import("std");
 const rpc = @import("rpc.zig");
 
+const log = std.log.scoped(.broker);
+
 pub const max_line_len = 64 * 1024;
 
 pub fn listen(io: std.Io, path: []const u8) !std.Io.net.Server {
@@ -74,7 +76,7 @@ pub fn serve(io: std.Io, gpa: std.mem.Allocator, server: *std.Io.net.Server, ctx
 
 pub fn serveLoop(io: std.Io, gpa: std.mem.Allocator, server: *std.Io.net.Server, ctx: *const rpc.Context) void {
     while (true) {
-        serve(io, gpa, server, ctx) catch |err| std.log.err("broker: {t}", .{err});
+        serve(io, gpa, server, ctx) catch |err| log.err("{t}", .{err});
     }
 }
 

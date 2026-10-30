@@ -7,7 +7,7 @@
 - [Secrets](#secrets)
 - [Inside the sandbox](#inside-the-sandbox)
 - [Write your own adapter](#write-your-own-adapter)
-- [Debug log](#debug-log)
+- [Debug log](logging.md)
 - [Security limits](#security-limits)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
@@ -49,7 +49,7 @@ cd ~/code/widgets
 zandy-claude
 ```
 
-To see the env's config and the broker methods without starting the agent, run `zandy-claude --zandy-config`.
+To see the env's config, the broker methods and the Seatbelt profile without starting the agent, run `zandy-claude --zandy-config`.
 
 After changing `flake.nix`:
 
@@ -235,30 +235,6 @@ For an adapter with a secret, see [nix/adapters/gitlab.nix](../nix/adapters/gitl
 
 Whatever the command can do, the agent can do too. Prefer narrow methods with `string` and `choice` params over a `list` that passes anything through. Avoid tools that read the project directory, like `git` or `make`. The agent can write there, and the tool would run whatever the project configures, outside the sandbox.
 
-## Debug log
-
-zandy logs to the macOS unified log under the subsystem `dev.zandy`, with one category per scope:
-
-- `zandy`: the session, the secrets loaded by name, the profile and how the agent exited
-- `broker`: each method the agent called, with its outcome and duration
-- `gateway`: when the gateway started and stopped
-
-Each operation the sandbox blocks is logged by macOS itself and tagged `zandy-<pid>`, where `<pid>` is the session in the first `zandy` line. The log holds no params, output or secret values. The agent can't read it.
-
-Watch it live in a second terminal, including the full Seatbelt profile at `debug`:
-
-```sh
-log stream --level debug --predicate 'subsystem == "dev.zandy" OR (senderImagePath ENDSWITH "/Sandbox" AND eventMessage CONTAINS "\nzandy-")'
-```
-
-To follow one session, replace `zandy-` with `zandy-<pid>`.
-
-Or look back at past sessions. macOS keeps everything except `debug` on disk for a few days:
-
-```sh
-log show --last 1h --predicate 'subsystem == "dev.zandy" OR (senderImagePath ENDSWITH "/Sandbox" AND eventMessage CONTAINS "\nzandy-")'
-```
-
 ## Security limits
 
 - **Environment variables are readable.** On macOS, any process can read the environment and arguments of every other process run by the same user. Seatbelt can't block that. So don't export secrets in the shell that starts zandy. Store them with `--zandy-secret` instead.
@@ -270,7 +246,7 @@ log show --last 1h --predicate 'subsystem == "dev.zandy" OR (senderImagePath END
 | Symptom | Fix |
 |---|---|
 | Bedrock: `refresh cached SSO token failed … InvalidGrantException` | The SSO session expired. Run `aws sso login --profile <profile>` |
-| `Operation not permitted` | Look up the blocked operation in the [debug log](#debug-log) |
+| `Operation not permitted` | Look up the blocked operation in the [debug log](logging.md) |
 | git: `unable to access '~/.config/git/config': Operation not permitted` | The presets don't allow reading the global git config yet |
 | claude tries to resolve AWS credentials inside the sandbox | Remove `AWS_PROFILE` and `awsCredentialExport` from `~/.claude/settings.json` |
 | `NameTooLong` at start | Your `$HOME` path is too long. `~/.zandy/run/<pid>/broker.sock` must fit in 104 bytes |

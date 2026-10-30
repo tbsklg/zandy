@@ -31,7 +31,7 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     var dir_buf: [std.fs.max_name_bytes]u8 = undefined;
     const dir_path = try broker.sessionDirPath(&dir_buf, env.home, session);
     try broker.createSocketDir(io, dir_path);
-    defer broker.removeSessionDir(io, dir_path) catch |err| std.log.warn("session cleanup failed: {t}", .{err});
+    defer broker.removeSessionDir(io, dir_path) catch |err| log.warn("session cleanup failed: {t}", .{err});
 
     const adapter_pipes = try materializeAdapters(arena, io, env.home, dir_path, manifest.adapters);
 
@@ -56,9 +56,22 @@ pub fn launch(init: std.process.Init, sandbox_env: SandboxEnv, user_args: []cons
     const thread = try std.Thread.spawn(.{}, broker.serveLoop, .{ io, init.gpa, &server, &ctx });
     thread.detach();
 
+    const status = waitAgent(pid) catch |err| {
+        log.err("waiting for agent failed: {t}", .{err});
+        return;
+    };
+    logExit(status, started.untilNow(io, .awake).toMilliseconds());
+}
+
+fn waitAgent(pid: std.c.pid_t) !u32 {
     var status: c_int = 0;
-    _ = std.c.waitpid(pid, &status, 0);
-    logExit(@bitCast(status), started.untilNow(io, .awake).toMilliseconds());
+    while (true) {
+        switch (std.posix.errno(std.c.waitpid(pid, &status, 0))) {
+            .SUCCESS => return @bitCast(status),
+            .INTR => continue,
+            else => return error.WaitFailed,
+        }
+    }
 }
 
 fn logExit(status: u32, duration_ms: i64) void {
@@ -66,6 +79,8 @@ fn logExit(status: u32, duration_ms: i64) void {
         log.info("agent exited with {d} after {d}ms", .{ std.c.W.EXITSTATUS(status), duration_ms });
     } else if (std.c.W.IFSIGNALED(status)) {
         log.info("agent killed by {t} after {d}ms", .{ std.c.W.TERMSIG(status), duration_ms });
+    } else {
+        log.info("agent ended with status {d} after {d}ms", .{ status, duration_ms });
     }
 }
 
@@ -74,7 +89,7 @@ fn materializeAdapters(arena: std.mem.Allocator, io: std.Io, home: []const u8, d
     for (adapters, adapter_pipes) |adapter, *pipes| {
         log.info("adapter {s}: secrets {f}", .{ adapter.name, secretNames(adapter.secrets) });
         pipes.* = secret.materialize(arena, io, home, try registry.dirFor(arena, dir_path, adapter), adapter.secrets, adapter.files) catch |err| {
-            std.debug.print("zandy: adapter '{s}' could not get its secrets: {t}\n", .{ adapter.name, err });
+            log.err("adapter '{s}' could not get its secrets: {t}", .{ adapter.name, err });
             return err;
         };
     }
@@ -85,7 +100,7 @@ fn startGateway(arena: std.mem.Allocator, io: std.Io, config: ?gateway.Gateway, 
     const c = config orelse return null;
     log.info("gateway {s}: secrets {f}", .{ c.name, secretNames(c.secrets) });
     return gateway.start(arena, io, c, environ, home, try secret.dirFor(arena, dir_path, "gateway")) catch |err| {
-        std.debug.print("zandy: gateway '{s}' could not start: {t}\n", .{ c.name, err });
+        log.err("gateway '{s}' could not start: {t}", .{ c.name, err });
         return err;
     };
 }
@@ -115,8 +130,7 @@ fn finalProfile(arena: std.mem.Allocator, profile: sbpl.Profile, running: ?gatew
 
     var aw = std.Io.Writer.Allocating.init(arena);
     try final.write(&aw.writer);
-    log.info("profile: {d} rules", .{final.rules.len});
-    log.debug("profile:\n{s}", .{aw.written()});
+
     return arena.dupeZ(u8, aw.written());
 }
 

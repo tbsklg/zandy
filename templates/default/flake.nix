@@ -1,5 +1,5 @@
 {
-  inputs.zandy.url = "git+https://codeberg.org/tbsklg/zandy";
+  inputs.zandy.url = "github:tbsklg/zandy.nix";
   inputs.nixpkgs.follows = "zandy/nixpkgs";
 
   outputs = { zandy, nixpkgs, ... }:

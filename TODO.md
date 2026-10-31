@@ -6,4 +6,4 @@
 - **Refresh OAuth tokens.** `anthropicOauth` reads the token once at launch; a session can outlive it.
 - **OpenAI in a preset.** No preset sets `gatewayEnv.openai` yet; opencode configures providers in its config file.
 - **aws-sigv4-proxy 1.13.1.** Pinned to 1.13 until nixpkgs has Go 1.26.9.
-- **Known issues.** Allow reading `~/.gitconfig` and `~/.config/git/config`; document `#!/usr/bin/env` shebangs.
+- **Known issues.** Allow reading symlinked git config, e.g. from home-manager; document `#!/usr/bin/env` shebangs.

@@ -249,7 +249,7 @@ Whatever the command can do, the agent can do too. Prefer narrow methods with `s
 |---|---|
 | Bedrock: `refresh cached SSO token failed … InvalidGrantException` | The SSO session expired. Run `aws sso login --profile <profile>` |
 | `Operation not permitted` | Look up the blocked operation in the [debug log](logging.md) |
-| git: `unable to access '~/.config/git/config': Operation not permitted` | The presets don't allow reading the global git config yet |
+| git: `unable to access '~/.config/git/config': Operation not permitted` | Your config is a symlink, e.g. from home-manager. The sandbox checks the target, so add it to `filesystem.allowRead` |
 | claude tries to resolve AWS credentials inside the sandbox | Remove `AWS_PROFILE` and `awsCredentialExport` from `~/.claude/settings.json` |
 | `NameTooLong` at start | Your `$HOME` path is too long. `~/.zandy/run/<pid>/broker.sock` must fit in 104 bytes |
 | opencode: `operation not permitted mkdir '/var/folders/…'` | Start opencode once without zandy, then with zandy |

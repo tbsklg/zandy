@@ -57,6 +57,10 @@ in
     { action = "deny"; operation = "file_write_all"; filter = { literal = { param_append = { param = "HOME"; suffix = "/.claude/settings.local.json"; }; }; }; }
     { action = "deny"; operation = "file_write_all"; filter = { subpath = { param_append = { param = "HOME"; suffix = "/.claude/plugins"; }; }; }; }
     { action = "allow"; operation = "file_write_all"; filter = { literal = { param_append = { param = "HOME"; suffix = "/Library/Caches/claude-cli-nodejs"; }; }; }; }
+    { action = "allow"; operation = "file_read_data"; filter = { literal = { param_append = { param = "HOME"; suffix = "/.gitconfig"; }; }; }; }
+    { action = "allow"; operation = "file_read_data"; filter = { literal = { param_append = { param = "HOME"; suffix = "/.config/git/config"; }; }; }; }
+    { action = "allow"; operation = "file_read_data"; filter = { literal = { param_append = { param = "HOME"; suffix = "/.config/git/ignore"; }; }; }; }
+    { action = "allow"; operation = "file_read_data"; filter = { literal = { param_append = { param = "HOME"; suffix = "/.config/git/attributes"; }; }; }; }
     { action = "allow"; operation = "file_read_data"; filter = { subpath = { literal = "/usr/share/icu"; }; }; }
     { action = "allow"; operation = "file_all"; filter = { subpath = { param = "CWD"; }; }; }
     { action = "allow"; operation = "file_all"; filter = { literal = { literal = "/dev/null"; }; }; }

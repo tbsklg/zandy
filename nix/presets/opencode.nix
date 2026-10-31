@@ -34,6 +34,10 @@
     { action = "allow"; operation = "file_all"; filter = { subpath = { param_append = { param = "HOME"; suffix = "/dotfiles/config/opencode"; }; }; }; }
     { action = "deny"; operation = "file_write_all"; filter = { literal = { param_append = { param = "HOME"; suffix = "/.config/opencode/opencode.json"; }; }; }; }
     { action = "deny"; operation = "file_write_all"; filter = { subpath = { param_append = { param = "HOME"; suffix = "/.config/opencode/plugin"; }; }; }; }
+    { action = "allow"; operation = "file_read_data"; filter = { literal = { param_append = { param = "HOME"; suffix = "/.gitconfig"; }; }; }; }
+    { action = "allow"; operation = "file_read_data"; filter = { literal = { param_append = { param = "HOME"; suffix = "/.config/git/config"; }; }; }; }
+    { action = "allow"; operation = "file_read_data"; filter = { literal = { param_append = { param = "HOME"; suffix = "/.config/git/ignore"; }; }; }; }
+    { action = "allow"; operation = "file_read_data"; filter = { literal = { param_append = { param = "HOME"; suffix = "/.config/git/attributes"; }; }; }; }
     { action = "allow"; operation = "file_read_data"; filter = { subpath = { literal = "/usr/share/icu"; }; }; }
     { action = "allow"; operation = "file_read_data"; filter = { literal = { literal = "/"; }; }; }
     { action = "allow"; operation = "file_read_data"; filter = { subpath = { literal = "/private/etc/ssl"; }; }; }

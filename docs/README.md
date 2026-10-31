@@ -1,4 +1,4 @@
-# zandy docs
+# zandy.nix docs
 
 - [Install](#install)
 - [Per project](#per-project)
@@ -27,7 +27,7 @@ Create your env from the template:
 
 ```sh
 mkdir -p ~/.config/zandy && cd ~/.config/zandy
-nix flake init -t git+https://codeberg.org/tbsklg/zandy
+nix flake init -t github:tbsklg/zandy.nix
 ```
 
 Edit `flake.nix`: replace the `acme-*` profiles and remove any adapters you don't need. Then install it:

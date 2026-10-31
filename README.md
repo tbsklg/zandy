@@ -1,4 +1,4 @@
-# zandy
+# zandy.nix
 
 **A sandbox for coding agents on macOS: declared in Nix, run by Zig, enforced by the macOS kernel.**
 
@@ -23,7 +23,7 @@ With [Nix](https://nixos.org/download) and flakes enabled:
 
 ```sh
 mkdir -p ~/.config/zandy && cd ~/.config/zandy
-nix flake init -t git+https://codeberg.org/tbsklg/zandy
+nix flake init -t github:tbsklg/zandy.nix
 $EDITOR flake.nix
 git init && git add -A
 nix profile add ~/.config/zandy

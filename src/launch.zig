@@ -1,15 +1,15 @@
 const std = @import("std");
 const macos = @import("macos.zig");
-const sbpl = @import("sbpl.zig");
-const broker = @import("broker.zig");
-const rpc = @import("rpc.zig");
-const registry = @import("registry.zig");
+const sbpl = @import("sandbox/sbpl.zig");
+const broker = @import("broker/server.zig");
+const rpc = @import("broker/rpc.zig");
+const registry = @import("broker/registry.zig");
 const gateway = @import("gateway.zig");
 const secret = @import("secret.zig");
 
-const Env = @import("env.zig");
-const SandboxEnv = @import("sandbox_env.zig");
-const Preset = @import("manifest.zig").Preset;
+const Env = @import("env/env.zig");
+const SandboxEnv = @import("env/sandbox_env.zig");
+const Preset = @import("env/manifest.zig").Preset;
 
 const log = std.log.scoped(.zandy);
 

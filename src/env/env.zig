@@ -1,5 +1,5 @@
 const std = @import("std");
-const macos = @import("macos.zig");
+const macos = @import("../macos.zig");
 
 const Env = @This();
 

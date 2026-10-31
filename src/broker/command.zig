@@ -1,6 +1,6 @@
 const std = @import("std");
 const registry = @import("registry.zig");
-const secret = @import("secret.zig");
+const secret = @import("../secret.zig");
 
 const log = std.log.scoped(.broker);
 

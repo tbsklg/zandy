@@ -1,6 +1,6 @@
 const std = @import("std");
 const command = @import("command.zig");
-const secret = @import("secret.zig");
+const secret = @import("../secret.zig");
 
 pub const Param = struct {
     name: []const u8,

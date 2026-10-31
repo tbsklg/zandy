@@ -1,6 +1,6 @@
 const std = @import("std");
-const broker = @import("broker.zig");
-const rpc = @import("rpc.zig");
+const broker = @import("broker/server.zig");
+const rpc = @import("broker/rpc.zig");
 
 const usage =
     \\usage: zandy-client discover

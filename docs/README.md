@@ -40,7 +40,7 @@ nix profile add ~/.config/zandy   # older Nix: nix profile install
 Before the first run you need:
 
 - a [model backend](#model-backends), e.g. a logged-in AWS profile with Bedrock access
-- the [secrets](#secrets) of your adapters, e.g. a GitLab token for the GitLab adapter
+- a login for your adapters' tools, e.g. `glab auth login` for the GitLab adapter
 
 Start the agent from a project directory:
 
@@ -136,7 +136,9 @@ Needs the API key, stored with `zandy-claude --zandy-secret openai-api-key`. Set
 
 ## Secrets
 
-zandy keeps secrets in its own keychain, `~/.zandy/zandy.keychain-db`, outside the sandbox.
+Adapters use the tool's own login: `aws sso login` for the AWS adapter, `glab auth login` for the GitLab adapter. The tool keeps its credentials where it always does, and the sandbox can't read them. You chose the tool, so how it stores its token is up to you and the tool.
+
+zandy only keeps the secrets of its own gateways, in its own keychain, `~/.zandy/zandy.keychain-db`, outside the sandbox.
 
 Create the keychain once. `security` asks you for a password for it:
 
@@ -148,14 +150,12 @@ security set-keychain-settings ~/.zandy/zandy.keychain-db   # no auto-lock
 Store a secret:
 
 ```sh
-zandy-claude --zandy-secret gitlab-token
+zandy-claude --zandy-secret anthropic-api-key
 ```
 
 zandy asks for the secret without echoing it, so it doesn't end up in your shell history. The keychain doesn't lock on its own. After a reboot, macOS asks for its password the first time zandy reads it.
 
-At launch, zandy reads the secrets that the gateway and the adapters need. They reach the proxy and the tools through named pipes in a private directory that the sandbox can't open. They never touch the disk and are never passed through an environment variable.
-
-That's why the GitLab adapter brings its own glab config and doesn't use `glab auth login`. glab's own login stores the token in plain text in `~/.config/glab-cli/config.yml`, where any process run by your user can read it.
+At launch, zandy reads the secrets that the gateway needs. They reach the proxy through named pipes in a private directory that the sandbox can't open. They never touch the disk and are never passed through an environment variable.
 
 Don't export secrets in the shell that starts zandy. See [Security limits](#security-limits) for why.
 
@@ -214,7 +214,7 @@ The agent then calls:
 zandy-client call mac.say '{"voice":"Bad News","text":"the tests failed"}'
 ```
 
-For an adapter with a secret, see [nix/adapters/gitlab.nix](../nix/adapters/gitlab.nix). It writes the token into a glab config file.
+If the tool has its own login, let it use that, like [nix/adapters/gitlab.nix](../nix/adapters/gitlab.nix). Only for a tool without one, hand it a secret from zandy's keychain with `secrets` and `files`.
 
 ### Fields
 
@@ -225,7 +225,7 @@ For an adapter with a secret, see [nix/adapters/gitlab.nix](../nix/adapters/gitl
 | `binary` | The program in `package/bin` |
 | `capabilities` | The methods: `name`, `description`, `params`, `argv` |
 | `env` | Env vars passed on from the shell that started zandy. Not for secrets |
-| `secrets` | Where each secret lives, e.g. `secrets.GITLAB_TOKEN.keychain = { service = "gitlab-token"; }`. Add `store = "login"` to read from the login keychain, or `field` to pick a path inside a JSON value |
+| `secrets` | Where each secret lives, e.g. `secrets.ACME_TOKEN.keychain = { service = "acme-token"; }`. Add `store = "login"` to read from the login keychain, or `field` to pick a path inside a JSON value |
 | `files` | Files the tool reads. `{secret.NAME}` is replaced with the secret. At most 4096 bytes in total |
 | `setEnv` | Env vars set for the command. `{dir}` is replaced with the adapter's private directory |
 
@@ -241,7 +241,7 @@ Whatever the command can do, the agent can do too. Prefer narrow methods with `s
 
 - **Environment variables are readable.** On macOS, any process can read the environment and arguments of every other process run by the same user. Seatbelt can't block that. So don't export secrets in the shell that starts zandy. Store them with `--zandy-secret` instead.
 - **Tools can print their own credentials.** `gitlab.cli` with `["config", "get", "token"]` returns the GitLab token. Narrow methods avoid this.
-- **glab's own login.** `glab auth login` stores its token in `~/.config/glab-cli/config.yml`. The presets don't allow reading it. Keep it that way, or the agent can bypass the broker.
+- **Tools keep their credentials in your home.** glab keeps its token in `~/.config/glab-cli/config.yml`, aws in `~/.aws`. The sandbox can't read them. Keep it that way: an `allowRead` for `~` or `~/.config` hands them to the agent, and then it can bypass the broker.
 
 ## Troubleshooting
 

@@ -1,7 +1,7 @@
 const std = @import("std");
-const sbpl = @import("sbpl.zig");
-const registry = @import("registry.zig");
-const gateway = @import("gateway.zig");
+const sbpl = @import("../sandbox/sbpl.zig");
+const registry = @import("../broker/registry.zig");
+const gateway = @import("../gateway.zig");
 
 pub const Preset = struct {
     name: []const u8,

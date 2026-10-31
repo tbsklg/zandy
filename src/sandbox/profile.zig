@@ -1,9 +1,9 @@
 const std = @import("std");
 const sbpl = @import("sbpl.zig");
-const store = @import("store.zig");
+const store = @import("../env/store.zig");
 
-const FileSystem = @import("manifest.zig").FileSystem;
-const Env = @import("env.zig");
+const FileSystem = @import("../env/manifest.zig").FileSystem;
+const Env = @import("../env/env.zig");
 const Rule = sbpl.Rule;
 
 pub fn buildProfile(arena: std.mem.Allocator, base: sbpl.Profile, env: Env, fs: FileSystem, store_paths: []const store.StorePath) !sbpl.Profile {

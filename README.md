@@ -1,4 +1,4 @@
-# zandy.nix
+# zandy.nix for macOS
 
 **A sandbox for coding agents on macOS: declared in Nix, run by Zig, enforced by the macOS kernel.**
 
